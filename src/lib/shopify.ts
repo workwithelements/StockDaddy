@@ -210,9 +210,9 @@ export async function syncFromShopify(): Promise<{
     newestOrderDate: new Date().toISOString().split("T")[0],
   };
 
-  // 7. Write to disk
-  setProductCache(productData);
-  setOrderCache(orderData);
+  // 7. Write to storage
+  await setProductCache(productData);
+  await setOrderCache(orderData);
 
   return { products: productData, orders: orderData };
 }

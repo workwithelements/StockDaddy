@@ -22,11 +22,11 @@ export async function GET(request: NextRequest) {
       await syncFromShopify();
     }
 
-    const products = getProductCache();
-    const orders = getOrderCache();
-    const configs = getSkuConfigs();
-    const alertHistory = getAlertHistory();
-    const productConfigs = getProductConfigs();
+    const products = await getProductCache();
+    const orders = await getOrderCache();
+    const configs = await getSkuConfigs();
+    const alertHistory = await getAlertHistory();
+    const productConfigs = await getProductConfigs();
 
     const rows = buildDashboardRows(products, orders, configs, alertHistory, productConfigs);
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    setAlertHistory(alertHistory);
+    await setAlertHistory(alertHistory);
 
     return NextResponse.json({
       checkedAt: new Date().toISOString(),

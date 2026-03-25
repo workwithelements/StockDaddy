@@ -5,7 +5,7 @@ import type { SkuConfig } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const configs = getSkuConfigs();
+  const configs = await getSkuConfigs();
   return NextResponse.json(configs);
 }
 
@@ -21,7 +21,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const store = getSkuConfigs();
+    const store = await getSkuConfigs();
 
     const existing: SkuConfig = store.configs[sku] || {
       sku,
@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest) {
 
     store.configs[sku] = updated;
     store.updatedAt = new Date().toISOString();
-    setSkuConfigs(store);
+    await setSkuConfigs(store);
 
     return NextResponse.json({ success: true, config: updated });
   } catch (err) {

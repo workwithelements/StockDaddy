@@ -5,7 +5,7 @@ import type { ProductConfig } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const configs = getProductConfigs();
+  const configs = await getProductConfigs();
   return NextResponse.json(configs);
 }
 
@@ -29,12 +29,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const store = getProductConfigs();
+    const store = await getProductConfigs();
 
     // Get product title from cache if not provided
     let title = productTitle;
     if (!title) {
-      const cache = getProductCache();
+      const cache = await getProductCache();
       const product = cache.products.find((p) => String(p.id) === productId);
       title = product?.title ?? "Unknown Product";
     }
@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest) {
 
     store.configs[productId] = updated;
     store.updatedAt = new Date().toISOString();
-    setProductConfigs(store);
+    await setProductConfigs(store);
 
     return NextResponse.json({ success: true, config: updated });
   } catch (err) {

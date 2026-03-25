@@ -1,5 +1,3 @@
-import fs from "fs";
-import path from "path";
 import type {
   CachedProductData,
   CachedOrderData,
@@ -9,7 +7,36 @@ import type {
   StockLocationStore,
 } from "./types";
 
+const isNetlify = !!process.env.NETLIFY;
+
+// --------------- Netlify Blobs backend ---------------
+
+async function getBlobStore() {
+  const { getStore } = await import("@netlify/blobs");
+  return getStore("stockdaddy");
+}
+
+async function blobGet<T>(key: string, defaultValue: T): Promise<T> {
+  const store = await getBlobStore();
+  const raw = await store.get(key, { type: "text" });
+  if (!raw) return defaultValue;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return defaultValue;
+  }
+}
+
+async function blobSet<T>(key: string, data: T): Promise<void> {
+  const store = await getBlobStore();
+  await store.set(key, JSON.stringify(data));
+}
+
+// --------------- Local file backend ---------------
+
 function getDataDir(): string {
+  const fs = require("fs") as typeof import("fs");
+  const path = require("path") as typeof import("path");
   const dir = path.join(process.cwd(), "data");
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -17,7 +44,9 @@ function getDataDir(): string {
   return dir;
 }
 
-function readJsonFile<T>(filename: string, defaultValue: T): T {
+function fileGet<T>(filename: string, defaultValue: T): T {
+  const fs = require("fs") as typeof import("fs");
+  const path = require("path") as typeof import("path");
   const filepath = path.join(getDataDir(), filename);
   try {
     const raw = fs.readFileSync(filepath, "utf-8");
@@ -27,26 +56,37 @@ function readJsonFile<T>(filename: string, defaultValue: T): T {
   }
 }
 
-function writeJsonFile<T>(filename: string, data: T): void {
+function fileSet<T>(filename: string, data: T): void {
+  const fs = require("fs") as typeof import("fs");
+  const path = require("path") as typeof import("path");
   const filepath = path.join(getDataDir(), filename);
   fs.writeFileSync(filepath, JSON.stringify(data, null, 2), "utf-8");
 }
 
-// Product cache
-export function getProductCache(): CachedProductData {
-  return readJsonFile("cache-products.json", {
-    products: [],
-    lastSyncedAt: "",
-  });
+// --------------- Unified async API ---------------
+
+async function readData<T>(key: string, defaultValue: T): Promise<T> {
+  if (isNetlify) return blobGet(key, defaultValue);
+  return fileGet(key + ".json", defaultValue);
 }
 
-export function setProductCache(data: CachedProductData): void {
-  writeJsonFile("cache-products.json", data);
+async function writeData<T>(key: string, data: T): Promise<void> {
+  if (isNetlify) return blobSet(key, data);
+  fileSet(key + ".json", data);
+}
+
+// Product cache
+export async function getProductCache(): Promise<CachedProductData> {
+  return readData("cache-products", { products: [], lastSyncedAt: "" });
+}
+
+export async function setProductCache(data: CachedProductData): Promise<void> {
+  return writeData("cache-products", data);
 }
 
 // Order cache
-export function getOrderCache(): CachedOrderData {
-  return readJsonFile("cache-orders.json", {
+export async function getOrderCache(): Promise<CachedOrderData> {
+  return readData("cache-orders", {
     dailySales: {},
     lastSyncedAt: "",
     oldestOrderDate: "",
@@ -54,42 +94,42 @@ export function getOrderCache(): CachedOrderData {
   });
 }
 
-export function setOrderCache(data: CachedOrderData): void {
-  writeJsonFile("cache-orders.json", data);
+export async function setOrderCache(data: CachedOrderData): Promise<void> {
+  return writeData("cache-orders", data);
 }
 
 // SKU configs
-export function getSkuConfigs(): SkuConfigStore {
-  return readJsonFile("sku-config.json", { configs: {}, updatedAt: "" });
+export async function getSkuConfigs(): Promise<SkuConfigStore> {
+  return readData("sku-config", { configs: {}, updatedAt: "" });
 }
 
-export function setSkuConfigs(data: SkuConfigStore): void {
-  writeJsonFile("sku-config.json", data);
+export async function setSkuConfigs(data: SkuConfigStore): Promise<void> {
+  return writeData("sku-config", data);
 }
 
 // Alert history
-export function getAlertHistory(): AlertHistoryStore {
-  return readJsonFile("alert-history.json", { alerts: {} });
+export async function getAlertHistory(): Promise<AlertHistoryStore> {
+  return readData("alert-history", { alerts: {} });
 }
 
-export function setAlertHistory(data: AlertHistoryStore): void {
-  writeJsonFile("alert-history.json", data);
+export async function setAlertHistory(data: AlertHistoryStore): Promise<void> {
+  return writeData("alert-history", data);
 }
 
 // Product configs (product-level settings)
-export function getProductConfigs(): ProductConfigStore {
-  return readJsonFile("product-config.json", { configs: {}, updatedAt: "" });
+export async function getProductConfigs(): Promise<ProductConfigStore> {
+  return readData("product-config", { configs: {}, updatedAt: "" });
 }
 
-export function setProductConfigs(data: ProductConfigStore): void {
-  writeJsonFile("product-config.json", data);
+export async function setProductConfigs(data: ProductConfigStore): Promise<void> {
+  return writeData("product-config", data);
 }
 
 // Stock locations
-export function getStockLocations(): StockLocationStore {
-  return readJsonFile("stock-locations.json", { locations: {}, updatedAt: "" });
+export async function getStockLocations(): Promise<StockLocationStore> {
+  return readData("stock-locations", { locations: {}, updatedAt: "" });
 }
 
-export function setStockLocations(data: StockLocationStore): void {
-  writeJsonFile("stock-locations.json", data);
+export async function setStockLocations(data: StockLocationStore): Promise<void> {
+  return writeData("stock-locations", data);
 }

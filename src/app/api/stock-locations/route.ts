@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
  * Returns all stock location entries, optionally filtered by product SKU prefix.
  */
 export async function GET() {
-  const store = getStockLocations();
+  const store = await getStockLocations();
   return NextResponse.json(store);
 }
 
@@ -26,7 +26,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Missing updates" }, { status: 400 });
   }
 
-  const store = getStockLocations();
+  const store = await getStockLocations();
 
   for (const [sku, values] of Object.entries(updates)) {
     const existing = store.locations[sku] || { uk3pl: 0, china: 0, ordered: 0 };
@@ -38,7 +38,7 @@ export async function PUT(request: NextRequest) {
   }
 
   store.updatedAt = new Date().toISOString();
-  setStockLocations(store);
+  await setStockLocations(store);
 
   return NextResponse.json({ success: true });
 }

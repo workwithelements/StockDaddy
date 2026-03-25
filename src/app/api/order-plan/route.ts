@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
   const windowParam = request.nextUrl.searchParams.get("window");
   const windowDays = windowParam === "7" ? 7 : windowParam === "14" ? 14 : 30;
 
-  const products = getProductCache();
-  const orders = getOrderCache();
+  const products = await getProductCache();
+  const orders = await getOrderCache();
 
   const plannerGroups = products.products.map((product) => ({
     productId: String(product.id),

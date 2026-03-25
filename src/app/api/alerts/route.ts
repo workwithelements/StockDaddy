@@ -4,7 +4,7 @@ import { getAlertHistory, setAlertHistory } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const history = getAlertHistory();
+  const history = await getAlertHistory();
   return NextResponse.json(history);
 }
 
@@ -16,20 +16,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "SKU required" }, { status: 400 });
     }
 
-    const history = getAlertHistory();
+    const history = await getAlertHistory();
 
     if (action === "dismiss") {
       if (history.alerts[sku]) {
         history.alerts[sku].dismissed = true;
         history.alerts[sku].dismissedAt = new Date().toISOString();
-        setAlertHistory(history);
+        await setAlertHistory(history);
       }
       return NextResponse.json({ success: true });
     }
 
     if (action === "clear") {
       delete history.alerts[sku];
-      setAlertHistory(history);
+      await setAlertHistory(history);
       return NextResponse.json({ success: true });
     }
 
