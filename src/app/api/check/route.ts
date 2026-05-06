@@ -7,6 +7,7 @@ import {
   getAlertHistory,
   setAlertHistory,
   getProductConfigs,
+  getStockLocations,
 } from "@/lib/storage";
 import { buildDashboardRows } from "@/lib/calculator";
 import { sendSlackAlert } from "@/lib/slack";
@@ -27,8 +28,16 @@ export async function GET(request: NextRequest) {
     const configs = await getSkuConfigs();
     const alertHistory = await getAlertHistory();
     const productConfigs = await getProductConfigs();
+    const stockLocations = await getStockLocations();
 
-    const rows = buildDashboardRows(products, orders, configs, alertHistory, productConfigs);
+    const rows = buildDashboardRows(
+      products,
+      orders,
+      configs,
+      alertHistory,
+      productConfigs,
+      stockLocations
+    );
 
     const alertsSent: Array<{
       sku: string;

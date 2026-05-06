@@ -20,6 +20,7 @@ export async function PUT(request: NextRequest) {
       moq,
       scaler,
       isFavourite,
+      isAdvertised,
     } = body;
 
     if (!productId) {
@@ -57,6 +58,7 @@ export async function PUT(request: NextRequest) {
       ...(moq !== undefined && { moq }),
       ...(scaler !== undefined && { scaler }),
       ...(isFavourite !== undefined && { isFavourite }),
+      ...(isAdvertised !== undefined && { isAdvertised }),
     };
 
     store.configs[productId] = updated;

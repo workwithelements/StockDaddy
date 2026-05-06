@@ -261,12 +261,30 @@ function ProductGroup({
               <div className="w-8 h-8 rounded bg-gray-100 flex-shrink-0" />
             )}
             <div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onViewProduct(); }}
-                className="font-medium text-gray-900 hover:text-indigo-600 hover:underline text-left"
-              >
-                {group.productTitle}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onViewProduct(); }}
+                  className="font-medium text-gray-900 hover:text-indigo-600 hover:underline text-left"
+                >
+                  {group.productTitle}
+                </button>
+                {group.trendBadge === "rising" && (
+                  <span
+                    className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700"
+                    title="7d rate ≥ 1.5× 30d rate"
+                  >
+                    ↑ Rising
+                  </span>
+                )}
+                {group.trendBadge === "falling" && (
+                  <span
+                    className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600"
+                    title="7d rate ≤ 0.5× 30d rate"
+                  >
+                    ↓ Falling
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-gray-500">
                 {group.variants.length} variant
                 {group.variants.length !== 1 ? "s" : ""}
@@ -276,6 +294,11 @@ function ProductGroup({
         </td>
         <td className="px-4 py-3 text-right tabular-nums font-medium">
           {group.totalStock}
+          {group.totalPipelineStock > 0 && (
+            <div className="text-xs text-indigo-500 font-normal">
+              +{group.totalPipelineStock} incoming
+            </div>
+          )}
         </td>
         <td className="px-4 py-3 text-right tabular-nums">
           {group.totalAvgDailyRate.toFixed(1)}
@@ -348,6 +371,11 @@ function ProductGroup({
             </td>
             <td className="px-4 py-2 text-right tabular-nums text-gray-600">
               {variant.currentStock}
+              {variant.pipelineStock > 0 && (
+                <div className="text-xs text-indigo-500">
+                  +{variant.pipelineStock}
+                </div>
+              )}
             </td>
             <td className="px-4 py-2 text-right tabular-nums text-gray-600">
               {variant.avgDailySellRate.toFixed(1)}

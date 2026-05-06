@@ -1,6 +1,6 @@
 "use client";
 
-export type AppTab = "dashboard" | "settings" | "order-planner";
+export type AppTab = "dashboard" | "settings" | "order-planner" | "scenario-planner";
 
 interface TabBarProps {
   activeTab: AppTab;
@@ -11,6 +11,7 @@ export default function TabBar({ activeTab, onTabChange }: TabBarProps) {
   const tabs: Array<{ key: AppTab; label: string }> = [
     { key: "dashboard", label: "Dashboard" },
     { key: "order-planner", label: "Order Planner" },
+    { key: "scenario-planner", label: "Scenario Planner" },
     { key: "settings", label: "Settings" },
   ];
 

@@ -42,7 +42,8 @@ export interface SkuConfig {
   leadTimeDays?: number;
   deliveryTimeDays?: number;
   safetyStock: number;
-  sellThroughWindow: 30 | 60 | 90;
+  safetyDays?: number;
+  sellThroughWindow: 7 | 14 | 30 | 60 | 90;
 }
 
 export interface SkuConfigStore {
@@ -60,6 +61,7 @@ export interface ProductConfig {
   moq: number;
   scaler: number;
   isFavourite: boolean;
+  isAdvertised?: boolean;
 }
 
 export interface ProductConfigStore {
@@ -98,6 +100,7 @@ export interface StockLocationStore {
 // === Dashboard View Model ===
 
 export type StockStatus = "green" | "yellow" | "red";
+export type TrendBadge = "rising" | "falling" | null;
 
 export interface SkuDashboardRow {
   productId: string;
@@ -106,13 +109,21 @@ export interface SkuDashboardRow {
   sku: string;
   imageUrl?: string;
   currentStock: number;
+  pipelineStock: number;
+  inventoryPosition: number;
   avgDailySellRate: number;
+  shortWindowRate: number;
+  longWindowRate: number;
+  trendBadge: TrendBadge;
   daysUntilStockout: number | null;
   reorderStatus: StockStatus;
   reorderNeeded: boolean;
+  reorderPoint: number;
   leadTimeDays: number;
   deliveryTimeDays: number;
   safetyStock: number;
+  safetyDays: number;
+  effectiveSafetyStock: number;
   suggestedReorderQty: number;
   moqSuggestedQty: number;
   sellThroughWindow: number;
@@ -126,9 +137,13 @@ export interface ProductGroupRow {
   productTitle: string;
   imageUrl?: string;
   isFavourite: boolean;
+  isAdvertised: boolean;
   totalStock: number;
+  totalPipelineStock: number;
+  totalInventoryPosition: number;
   totalAvgDailyRate: number;
   worstStatus: StockStatus;
+  trendBadge: TrendBadge;
   minDaysUntilStockout: number | null;
   moq: number;
   scaler: number;

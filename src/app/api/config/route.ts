@@ -12,7 +12,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sku, safetyStock, sellThroughWindow } = body;
+    const { sku, safetyStock, safetyDays, sellThroughWindow } = body;
 
     if (!sku) {
       return NextResponse.json(
@@ -26,12 +26,13 @@ export async function PUT(request: NextRequest) {
     const existing: SkuConfig = store.configs[sku] || {
       sku,
       safetyStock: 0,
-      sellThroughWindow: 30 as const,
+      sellThroughWindow: 7 as const,
     };
 
     const updated: SkuConfig = {
       ...existing,
       ...(safetyStock !== undefined && { safetyStock }),
+      ...(safetyDays !== undefined && { safetyDays }),
       ...(sellThroughWindow !== undefined && { sellThroughWindow }),
     };
 
