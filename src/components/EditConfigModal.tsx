@@ -15,6 +15,7 @@ export default function EditConfigModal({
   onSave,
 }: EditConfigModalProps) {
   const [safetyStock, setSafetyStock] = useState(row.safetyStock);
+  const [safetyDays, setSafetyDays] = useState(row.safetyDays);
   const [window, setWindow] = useState(row.sellThroughWindow);
   const [saving, setSaving] = useState(false);
 
@@ -27,6 +28,7 @@ export default function EditConfigModal({
         body: JSON.stringify({
           sku: row.sku,
           safetyStock,
+          safetyDays,
           sellThroughWindow: window,
         }),
       });
@@ -52,7 +54,23 @@ export default function EditConfigModal({
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Safety Stock (units)
+              Safety Days of Cover
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={safetyDays}
+              onChange={(e) => setSafetyDays(parseInt(e.target.value) || 0)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Buffer expressed as days of stock — scales with demand. Default 7.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Extra Safety Stock (units)
             </label>
             <input
               type="number"
@@ -62,7 +80,7 @@ export default function EditConfigModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
             <p className="text-xs text-gray-400 mt-1">
-              Extra buffer units to always keep in stock
+              Optional flat unit buffer added on top of safety days
             </p>
           </div>
 

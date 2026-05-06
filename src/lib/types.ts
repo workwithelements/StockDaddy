@@ -42,6 +42,7 @@ export interface SkuConfig {
   leadTimeDays?: number;
   deliveryTimeDays?: number;
   safetyStock: number;
+  safetyDays?: number;
   sellThroughWindow: 7 | 14 | 30 | 60 | 90;
 }
 
@@ -99,6 +100,7 @@ export interface StockLocationStore {
 // === Dashboard View Model ===
 
 export type StockStatus = "green" | "yellow" | "red";
+export type TrendBadge = "rising" | "falling" | null;
 
 export interface SkuDashboardRow {
   productId: string;
@@ -110,12 +112,18 @@ export interface SkuDashboardRow {
   pipelineStock: number;
   inventoryPosition: number;
   avgDailySellRate: number;
+  shortWindowRate: number;
+  longWindowRate: number;
+  trendBadge: TrendBadge;
   daysUntilStockout: number | null;
   reorderStatus: StockStatus;
   reorderNeeded: boolean;
+  reorderPoint: number;
   leadTimeDays: number;
   deliveryTimeDays: number;
   safetyStock: number;
+  safetyDays: number;
+  effectiveSafetyStock: number;
   suggestedReorderQty: number;
   moqSuggestedQty: number;
   sellThroughWindow: number;
@@ -135,6 +143,7 @@ export interface ProductGroupRow {
   totalInventoryPosition: number;
   totalAvgDailyRate: number;
   worstStatus: StockStatus;
+  trendBadge: TrendBadge;
   minDaysUntilStockout: number | null;
   moq: number;
   scaler: number;

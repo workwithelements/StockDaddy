@@ -1,6 +1,7 @@
 import type {
   DailySalesEntry,
   StockStatus,
+  TrendBadge,
   SkuDashboardRow,
   CachedProductData,
   CachedOrderData,
@@ -14,14 +15,18 @@ import type {
 const DEFAULT_LEAD_TIME = 28;
 const DEFAULT_DELIVERY_TIME = 0;
 const DEFAULT_SAFETY_STOCK = 0;
+const DEFAULT_SAFETY_DAYS = 7;
 const DEFAULT_SELL_THROUGH_WINDOW: 7 | 14 | 30 | 60 | 90 = 7;
 // Days of cover the next reorder should leave you with after it lands. Keeps
 // reorder cycles roughly monthly without manual tuning.
 const DEFAULT_COVER_PERIOD_DAYS = 30;
+// EWMA smoothing factor: weight given to the most recent day. Higher = more
+// reactive to recent activity, lower = more stable.
+const EWMA_ALPHA = 0.3;
+// Trend ratio thresholds: short-window rate ÷ long-window rate.
+const TREND_RISING_RATIO = 1.5;
+const TREND_FALLING_RATIO = 0.5;
 
-/**
- * Resolve config with fallback chain: SKU override → product config → defaults
- */
 export function getResolvedConfig(
   sku: string,
   productId: string,
@@ -31,6 +36,7 @@ export function getResolvedConfig(
   leadTimeDays: number;
   deliveryTimeDays: number;
   safetyStock: number;
+  safetyDays: number;
   sellThroughWindow: 7 | 14 | 30 | 60 | 90;
 } {
   const skuCfg = skuConfigs.configs[sku];
@@ -42,26 +48,66 @@ export function getResolvedConfig(
     deliveryTimeDays:
       skuCfg?.deliveryTimeDays ?? prodCfg?.deliveryTimeDays ?? DEFAULT_DELIVERY_TIME,
     safetyStock: skuCfg?.safetyStock ?? DEFAULT_SAFETY_STOCK,
+    safetyDays: skuCfg?.safetyDays ?? DEFAULT_SAFETY_DAYS,
     sellThroughWindow: skuCfg?.sellThroughWindow ?? DEFAULT_SELL_THROUGH_WINDOW,
   };
 }
 
+/**
+ * Exponentially-weighted moving average of daily sell rate over the window.
+ * Recent days count more (α=0.3 by default), so a relaunch / promo shows up
+ * faster than a flat moving average would, without being as twitchy as a 1-day
+ * snapshot. Iterates per-day so zero-sale days correctly drag the rate down.
+ */
 export function calculateAvgDailySellRate(
   dailySales: DailySalesEntry[],
-  windowDays: number
+  windowDays: number,
+  alpha: number = EWMA_ALPHA
 ): number {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - windowDays);
-  const cutoffStr = cutoff.toISOString().split("T")[0];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  let totalQty = 0;
+  const salesByDate = new Map<string, number>();
   for (const entry of dailySales) {
-    if (entry.date >= cutoffStr) {
-      totalQty += entry.quantity;
-    }
+    salesByDate.set(entry.date, (salesByDate.get(entry.date) ?? 0) + entry.quantity);
   }
 
-  return Math.round((totalQty / windowDays) * 100) / 100;
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (let daysAgo = 1; daysAgo <= windowDays; daysAgo++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - daysAgo);
+    const dateStr = d.toISOString().split("T")[0];
+    const qty = salesByDate.get(dateStr) ?? 0;
+    const weight = alpha * Math.pow(1 - alpha, daysAgo - 1);
+    weightedSum += qty * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight === 0) return 0;
+  return Math.round((weightedSum / totalWeight) * 100) / 100;
+}
+
+/**
+ * Compares short-window rate (7d) to long-window rate (30d). If recent
+ * activity is materially higher (or lower) than the longer baseline, surface
+ * a badge so the operator can spot post-relaunch / post-promo SKUs.
+ */
+export function calculateTrendBadge(
+  dailySales: DailySalesEntry[],
+  shortWindow: number = 7,
+  longWindow: number = 30
+): { shortRate: number; longRate: number; badge: TrendBadge } {
+  const shortRate = calculateAvgDailySellRate(dailySales, shortWindow);
+  const longRate = calculateAvgDailySellRate(dailySales, longWindow);
+
+  // Need a meaningful baseline to compare against.
+  if (longRate < 0.1) return { shortRate, longRate, badge: null };
+
+  const ratio = shortRate / longRate;
+  if (ratio >= TREND_RISING_RATIO) return { shortRate, longRate, badge: "rising" };
+  if (ratio <= TREND_FALLING_RATIO) return { shortRate, longRate, badge: "falling" };
+  return { shortRate, longRate, badge: null };
 }
 
 export function calculateDaysUntilStockout(
@@ -72,11 +118,40 @@ export function calculateDaysUntilStockout(
   return Math.floor(currentStock / avgDailySellRate);
 }
 
+/**
+ * Effective safety stock = days-of-cover converted to units + any flat unit
+ * buffer the user has set. Days-of-cover scales naturally with demand so the
+ * default works without per-SKU tuning.
+ */
+export function calculateEffectiveSafetyStock(
+  avgDailySellRate: number,
+  safetyStock: number,
+  safetyDays: number
+): number {
+  return Math.ceil(avgDailySellRate * safetyDays) + safetyStock;
+}
+
+/**
+ * Reorder point: the inventory position at which we should place a new order
+ * to avoid eating into safety stock during the lead time. Classic ROP formula.
+ */
+export function calculateReorderPoint(
+  avgDailySellRate: number,
+  leadTimeDays: number,
+  deliveryTimeDays: number,
+  effectiveSafetyStock: number
+): number {
+  return (
+    Math.ceil(avgDailySellRate * (leadTimeDays + deliveryTimeDays)) +
+    effectiveSafetyStock
+  );
+}
+
 export function calculateSuggestedReorderQty(
   avgDailySellRate: number,
   leadTimeDays: number,
   deliveryTimeDays: number,
-  safetyStock: number,
+  effectiveSafetyStock: number,
   pipelineStock: number = 0,
   coverPeriodDays: number = DEFAULT_COVER_PERIOD_DAYS
 ): number {
@@ -85,29 +160,29 @@ export function calculateSuggestedReorderQty(
   const totalNeed =
     Math.ceil(
       avgDailySellRate * (leadTimeDays + deliveryTimeDays + coverPeriodDays)
-    ) + safetyStock;
+    ) + effectiveSafetyStock;
   return Math.max(0, totalNeed - pipelineStock);
 }
 
+/**
+ * Status from the inventory position vs reorder point. red when at/below
+ * ROP (we should already have ordered), yellow within 50% of ROP (watch),
+ * green otherwise. No sales → green (nothing to do).
+ */
 export function determineStockStatus(
-  daysUntilStockout: number | null,
-  leadTimeDays: number,
-  deliveryTimeDays: number
+  inventoryPosition: number,
+  reorderPoint: number,
+  avgDailySellRate: number
 ): { status: StockStatus; reorderNeeded: boolean } {
-  const totalLeadTime = leadTimeDays + deliveryTimeDays;
-
-  if (daysUntilStockout === null) {
+  if (avgDailySellRate <= 0) {
     return { status: "green", reorderNeeded: false };
   }
-
-  if (daysUntilStockout <= totalLeadTime) {
+  if (inventoryPosition <= reorderPoint) {
     return { status: "red", reorderNeeded: true };
   }
-
-  if (daysUntilStockout <= totalLeadTime * 1.5) {
+  if (inventoryPosition <= reorderPoint * 1.5) {
     return { status: "yellow", reorderNeeded: false };
   }
-
   return { status: "green", reorderNeeded: false };
 }
 
@@ -178,7 +253,6 @@ export function buildDashboardRows(
     const productId = String(product.id);
 
     for (const variant of product.variants) {
-      // Use real SKU or generate a synthetic one from product+variant ID
       const sku = variant.sku || `_auto_${productId}_${variant.id}`;
 
       const config = getResolvedConfig(
@@ -189,6 +263,7 @@ export function buildDashboardRows(
       );
       const sales = orders.dailySales[sku] || [];
       const avgRate = calculateAvgDailySellRate(sales, config.sellThroughWindow);
+      const trend = calculateTrendBadge(sales);
 
       // Inventory position = sellable now + everything in the pipeline that
       // will hit the warehouse without further action. Skip uk3pl: it overlaps
@@ -198,17 +273,28 @@ export function buildDashboardRows(
       const currentStock = variant.inventory_quantity;
       const inventoryPosition = currentStock + pipelineStock;
 
+      const effectiveSafetyStock = calculateEffectiveSafetyStock(
+        avgRate,
+        config.safetyStock,
+        config.safetyDays
+      );
+      const reorderPoint = calculateReorderPoint(
+        avgRate,
+        config.leadTimeDays,
+        config.deliveryTimeDays,
+        effectiveSafetyStock
+      );
       const daysLeft = calculateDaysUntilStockout(inventoryPosition, avgRate);
       const { status, reorderNeeded } = determineStockStatus(
-        daysLeft,
-        config.leadTimeDays,
-        config.deliveryTimeDays
+        inventoryPosition,
+        reorderPoint,
+        avgRate
       );
       const suggestedQty = calculateSuggestedReorderQty(
         avgRate,
         config.leadTimeDays,
         config.deliveryTimeDays,
-        config.safetyStock,
+        effectiveSafetyStock,
         pipelineStock
       );
 
@@ -225,12 +311,18 @@ export function buildDashboardRows(
         pipelineStock,
         inventoryPosition,
         avgDailySellRate: avgRate,
+        shortWindowRate: trend.shortRate,
+        longWindowRate: trend.longRate,
+        trendBadge: trend.badge,
         daysUntilStockout: daysLeft,
         reorderStatus: status,
         reorderNeeded,
+        reorderPoint,
         leadTimeDays: config.leadTimeDays,
         deliveryTimeDays: config.deliveryTimeDays,
         safetyStock: config.safetyStock,
+        safetyDays: config.safetyDays,
+        effectiveSafetyStock,
         suggestedReorderQty: suggestedQty,
         moqSuggestedQty: suggestedQty,
         sellThroughWindow: config.sellThroughWindow,
@@ -314,6 +406,8 @@ export function buildProductGroups(
 
     let worstStatus: StockStatus = "green";
     let minDaysUntilStockout: number | null = null;
+    let risingCount = 0;
+    let fallingCount = 0;
     for (const v of variants) {
       if (statusOrder[v.reorderStatus] < statusOrder[worstStatus]) {
         worstStatus = v.reorderStatus;
@@ -326,7 +420,13 @@ export function buildProductGroups(
           minDaysUntilStockout = v.daysUntilStockout;
         }
       }
+      if (v.trendBadge === "rising") risingCount++;
+      if (v.trendBadge === "falling") fallingCount++;
     }
+
+    let trendBadge: TrendBadge = null;
+    if (risingCount > 0 && risingCount >= fallingCount) trendBadge = "rising";
+    else if (fallingCount > 0) trendBadge = "falling";
 
     groups.push({
       productId,
@@ -339,6 +439,7 @@ export function buildProductGroups(
       totalInventoryPosition,
       totalAvgDailyRate,
       worstStatus,
+      trendBadge,
       minDaysUntilStockout,
       moq,
       scaler,
