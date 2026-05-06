@@ -8,6 +8,7 @@ import DashboardTable from "@/components/DashboardTable";
 import SettingsPanel from "@/components/SettingsPanel";
 import OrderPlanner from "@/components/OrderPlanner";
 import ProductStockPage from "@/components/ProductStockPage";
+import ScenarioPlanner from "@/components/ScenarioPlanner";
 
 export default function Home() {
   const [groups, setGroups] = useState<ProductGroupRow[]>([]);
@@ -170,6 +171,39 @@ export default function Home() {
           />
         ) : activeTab === "order-planner" ? (
           <OrderPlanner onViewProduct={setViewingProductId} />
+        ) : activeTab === "scenario-planner" ? (
+          <ScenarioPlanner
+            groups={groups}
+            onToggleAdvertised={async (productId, productTitle, next) => {
+              // Optimistic
+              setGroups((prev) =>
+                prev.map((g) =>
+                  g.productId === productId ? { ...g, isAdvertised: next } : g
+                )
+              );
+              try {
+                await fetch("/api/product-config", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    productId,
+                    productTitle,
+                    isAdvertised: next,
+                  }),
+                });
+                await fetchDashboard();
+              } catch (err) {
+                console.error("Toggle advertised failed:", err);
+                setGroups((prev) =>
+                  prev.map((g) =>
+                    g.productId === productId
+                      ? { ...g, isAdvertised: !next }
+                      : g
+                  )
+                );
+              }
+            }}
+          />
         ) : (
           <SettingsPanel
             groups={groups}

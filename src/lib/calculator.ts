@@ -255,6 +255,7 @@ export function buildProductGroups(
     const moq = prodCfg?.moq ?? 0;
     const scaler = prodCfg?.scaler ?? 1;
     const isFavourite = prodCfg?.isFavourite ?? false;
+    const isAdvertised = prodCfg?.isAdvertised ?? false;
 
     // Apply MOQ distribution if moq > 0
     if (moq > 0) {
@@ -308,6 +309,7 @@ export function buildProductGroups(
       productTitle: first.productTitle,
       imageUrl: first.imageUrl,
       isFavourite,
+      isAdvertised,
       totalStock,
       totalAvgDailyRate,
       worstStatus,

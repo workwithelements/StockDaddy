@@ -60,6 +60,7 @@ export interface ProductConfig {
   moq: number;
   scaler: number;
   isFavourite: boolean;
+  isAdvertised?: boolean;
 }
 
 export interface ProductConfigStore {
@@ -126,6 +127,7 @@ export interface ProductGroupRow {
   productTitle: string;
   imageUrl?: string;
   isFavourite: boolean;
+  isAdvertised: boolean;
   totalStock: number;
   totalAvgDailyRate: number;
   worstStatus: StockStatus;
