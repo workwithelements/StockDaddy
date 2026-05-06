@@ -10,7 +10,7 @@ import {
   getStockLocations,
 } from "@/lib/storage";
 import { buildDashboardRows } from "@/lib/calculator";
-import { sendSlackAlert } from "@/lib/slack";
+import { sendStockAlert } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -58,8 +58,7 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Send Slack alert
-      const sent = await sendSlackAlert(row);
+      const sent = await sendStockAlert(row);
 
       if (sent) {
         alertHistory.alerts[row.sku] = {
