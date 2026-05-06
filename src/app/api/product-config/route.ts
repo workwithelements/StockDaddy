@@ -45,7 +45,7 @@ export async function PUT(request: NextRequest) {
       productTitle: title,
       leadTimeDays: 28,
       deliveryTimeDays: 0,
-      moq: 0,
+      moq: 100,
       scaler: 1,
       isFavourite: false,
     };

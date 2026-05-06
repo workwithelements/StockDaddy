@@ -1,4 +1,4 @@
-import type { SkuDashboardRow } from "./types";
+import type { ProductGroupRow } from "./types";
 
 function escapeHtml(s: string): string {
   return s
@@ -7,14 +7,17 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
-async function sendTelegramMessage(text: string): Promise<boolean> {
+interface SendResult {
+  ok: boolean;
+  reason?: string;
+}
+
+async function sendTelegramMessage(text: string): Promise<SendResult> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
-  if (!token || !chatId) {
-    console.log("[StockDaddy] Telegram not configured (missing token or chat ID)");
-    return true; // tracked-only mode, like the old slack.ts behavior
-  }
+  if (!token) return { ok: false, reason: "TELEGRAM_BOT_TOKEN not set" };
+  if (!chatId) return { ok: false, reason: "TELEGRAM_CHAT_ID not set" };
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -29,23 +32,44 @@ async function sendTelegramMessage(text: string): Promise<boolean> {
     });
     if (!res.ok) {
       const body = await res.text();
-      console.error(`Telegram send failed (${res.status}): ${body}`);
-      return false;
+      return { ok: false, reason: `Telegram API ${res.status}: ${body}` };
     }
-    return true;
+    return { ok: true };
   } catch (err) {
-    console.error("Telegram send threw:", err);
-    return false;
+    return { ok: false, reason: `Telegram fetch threw: ${String(err)}` };
   }
 }
 
-export async function sendStockAlert(row: SkuDashboardRow): Promise<boolean> {
-  const title = escapeHtml(row.productTitle);
-  const variant = escapeHtml(row.variantTitle);
-  const sku = escapeHtml(row.sku);
-  const pipelineNote =
-    row.pipelineStock > 0 ? ` (+${row.pipelineStock} incoming)` : "";
-  const leadTime = row.leadTimeDays + row.deliveryTimeDays;
+export async function sendProductReorderAlert(
+  group: ProductGroupRow
+): Promise<boolean> {
+  const title = escapeHtml(group.productTitle);
+  const totalQty = group.totalSuggestedReorderQty;
+  const leadTime = group.variants[0]?.leadTimeDays ?? 0;
+  const deliveryTime = group.variants[0]?.deliveryTimeDays ?? 0;
+  const totalLead = leadTime + deliveryTime;
+
+  const lines: string[] = [];
+  lines.push(`<b>🔻 Reorder: ${title}</b>`);
+  lines.push("");
+  lines.push("<b>Variants:</b>");
+  for (const v of group.variants) {
+    const variant = escapeHtml(v.variantTitle);
+    const incoming =
+      v.pipelineStock > 0 ? ` (+${v.pipelineStock} on order)` : "";
+    const eta = v.orderedExpectedDate
+      ? ` · ETA ${escapeHtml(v.orderedExpectedDate)}`
+      : "";
+    const daysLeft = v.daysUntilStockout ?? "—";
+    lines.push(
+      `• <b>${variant}</b> — qty <b>${v.moqSuggestedQty}</b>` +
+        `\n   stock ${v.currentStock}${incoming}${eta}, avg ${v.avgDailySellRate.toFixed(1)}/day, ${daysLeft}d left`
+    );
+  }
+  lines.push("");
+  lines.push(`<b>Total order:</b> ${totalQty} units (MOQ ${group.moq})`);
+  lines.push(`<b>Lead time:</b> ${totalLead} days`);
+
   const ts = new Date().toLocaleString("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -54,22 +78,17 @@ export async function sendStockAlert(row: SkuDashboardRow): Promise<boolean> {
     minute: "2-digit",
     timeZone: "UTC",
   });
+  lines.push("");
+  lines.push(`<i>StockDaddy · ${ts} UTC</i>`);
 
-  const text =
-    `<b>🔻 Reorder: ${title}</b>\n` +
-    `<i>${variant}</i>\n\n` +
-    `<b>SKU:</b> <code>${sku}</code>\n` +
-    `<b>Stock:</b> ${row.currentStock}${pipelineNote}\n` +
-    `<b>Avg/day:</b> ${row.avgDailySellRate.toFixed(1)}\n` +
-    `<b>Days left:</b> ${row.daysUntilStockout ?? "N/A"}\n` +
-    `<b>Lead time:</b> ${leadTime} days\n` +
-    `<b>Reorder qty:</b> ${row.moqSuggestedQty || row.suggestedReorderQty}\n\n` +
-    `<i>StockDaddy · ${ts} UTC</i>`;
-
-  return sendTelegramMessage(text);
+  const result = await sendTelegramMessage(lines.join("\n"));
+  if (!result.ok) {
+    console.error(`[StockDaddy] Telegram alert skipped: ${result.reason}`);
+  }
+  return result.ok;
 }
 
-export async function sendTestAlert(): Promise<boolean> {
+export async function sendTestAlert(): Promise<SendResult> {
   const ts = new Date().toLocaleString("en-GB", {
     weekday: "short",
     day: "numeric",

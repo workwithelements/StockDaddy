@@ -86,9 +86,13 @@ export interface AlertHistoryStore {
 // === Stock Locations ===
 
 export interface StockLocationEntry {
-  uk3pl: number;
-  china: number;
   ordered: number;
+  /** ISO date (yyyy-mm-dd) when the on-order stock is expected to arrive. */
+  orderedExpectedDate?: string;
+  /** Legacy fields, retained so old blob entries still deserialize. Not used
+   *  in reorder math or surfaced in the UI. */
+  uk3pl?: number;
+  china?: number;
 }
 
 export interface StockLocationStore {
@@ -100,7 +104,6 @@ export interface StockLocationStore {
 // === Dashboard View Model ===
 
 export type StockStatus = "green" | "yellow" | "red";
-export type TrendBadge = "rising" | "falling" | null;
 
 export interface SkuDashboardRow {
   productId: string;
@@ -110,11 +113,9 @@ export interface SkuDashboardRow {
   imageUrl?: string;
   currentStock: number;
   pipelineStock: number;
+  orderedExpectedDate?: string;
   inventoryPosition: number;
   avgDailySellRate: number;
-  shortWindowRate: number;
-  longWindowRate: number;
-  trendBadge: TrendBadge;
   daysUntilStockout: number | null;
   reorderStatus: StockStatus;
   reorderNeeded: boolean;
@@ -143,7 +144,6 @@ export interface ProductGroupRow {
   totalInventoryPosition: number;
   totalAvgDailyRate: number;
   worstStatus: StockStatus;
-  trendBadge: TrendBadge;
   minDaysUntilStockout: number | null;
   moq: number;
   scaler: number;
