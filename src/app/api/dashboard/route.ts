@@ -5,6 +5,7 @@ import {
   getSkuConfigs,
   getAlertHistory,
   getProductConfigs,
+  getStockLocations,
 } from "@/lib/storage";
 import { buildDashboardRows, buildProductGroups } from "@/lib/calculator";
 
@@ -16,13 +17,15 @@ export async function GET() {
   const skuConfigs = await getSkuConfigs();
   const alerts = await getAlertHistory();
   const productConfigs = await getProductConfigs();
+  const stockLocations = await getStockLocations();
 
   const rows = buildDashboardRows(
     products,
     orders,
     skuConfigs,
     alerts,
-    productConfigs
+    productConfigs,
+    stockLocations
   );
   const groups = buildProductGroups(rows, productConfigs);
 

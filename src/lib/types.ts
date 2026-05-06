@@ -107,6 +107,8 @@ export interface SkuDashboardRow {
   sku: string;
   imageUrl?: string;
   currentStock: number;
+  pipelineStock: number;
+  inventoryPosition: number;
   avgDailySellRate: number;
   daysUntilStockout: number | null;
   reorderStatus: StockStatus;
@@ -129,6 +131,8 @@ export interface ProductGroupRow {
   isFavourite: boolean;
   isAdvertised: boolean;
   totalStock: number;
+  totalPipelineStock: number;
+  totalInventoryPosition: number;
   totalAvgDailyRate: number;
   worstStatus: StockStatus;
   minDaysUntilStockout: number | null;

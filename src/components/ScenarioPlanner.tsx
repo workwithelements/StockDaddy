@@ -27,9 +27,9 @@ export default function ScenarioPlanner({
         ? g.totalAvgDailyRate * multiplier
         : g.totalAvgDailyRate;
 
-      const totalStock = g.totalStock;
+      const inventoryPosition = g.totalInventoryPosition;
       const projectedDaysLeft =
-        projectedRate > 0 ? Math.floor(totalStock / projectedRate) : null;
+        projectedRate > 0 ? Math.floor(inventoryPosition / projectedRate) : null;
 
       const first = g.variants[0];
       const leadTime = (first?.leadTimeDays ?? 28) + (first?.deliveryTimeDays ?? 0);
@@ -46,9 +46,14 @@ export default function ScenarioPlanner({
       }
 
       const safetyStock = g.variants.reduce((s, v) => s + v.safetyStock, 0);
+      // Cover lead time + 30 days of post-arrival cover, minus what's already
+      // in the pipeline (matches calculator's calculateSuggestedReorderQty).
+      const COVER = 30;
       const projectedQty = Math.max(
         0,
-        Math.ceil(projectedRate * leadTime) + safetyStock
+        Math.ceil(projectedRate * (leadTime + COVER)) +
+          safetyStock -
+          g.totalPipelineStock
       );
       const projectedQtyMOQ = Math.max(projectedQty, g.moq);
 

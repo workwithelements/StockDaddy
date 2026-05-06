@@ -8,12 +8,16 @@ import type {
   AlertHistoryStore,
   ProductConfigStore,
   ProductGroupRow,
+  StockLocationStore,
 } from "./types";
 
 const DEFAULT_LEAD_TIME = 28;
 const DEFAULT_DELIVERY_TIME = 0;
 const DEFAULT_SAFETY_STOCK = 0;
 const DEFAULT_SELL_THROUGH_WINDOW: 7 | 14 | 30 | 60 | 90 = 7;
+// Days of cover the next reorder should leave you with after it lands. Keeps
+// reorder cycles roughly monthly without manual tuning.
+const DEFAULT_COVER_PERIOD_DAYS = 30;
 
 /**
  * Resolve config with fallback chain: SKU override → product config → defaults
@@ -72,12 +76,17 @@ export function calculateSuggestedReorderQty(
   avgDailySellRate: number,
   leadTimeDays: number,
   deliveryTimeDays: number,
-  safetyStock: number
+  safetyStock: number,
+  pipelineStock: number = 0,
+  coverPeriodDays: number = DEFAULT_COVER_PERIOD_DAYS
 ): number {
-  return Math.max(
-    0,
-    Math.ceil(avgDailySellRate * (leadTimeDays + deliveryTimeDays)) + safetyStock
-  );
+  // Cover demand during lead time + a buffer period of stock once it lands,
+  // minus what's already on the way.
+  const totalNeed =
+    Math.ceil(
+      avgDailySellRate * (leadTimeDays + deliveryTimeDays + coverPeriodDays)
+    ) + safetyStock;
+  return Math.max(0, totalNeed - pipelineStock);
 }
 
 export function determineStockStatus(
@@ -160,7 +169,8 @@ export function buildDashboardRows(
   orders: CachedOrderData,
   skuConfigs: SkuConfigStore,
   alerts: AlertHistoryStore,
-  productConfigs: ProductConfigStore
+  productConfigs: ProductConfigStore,
+  stockLocations: StockLocationStore
 ): SkuDashboardRow[] {
   const rows: SkuDashboardRow[] = [];
 
@@ -179,7 +189,16 @@ export function buildDashboardRows(
       );
       const sales = orders.dailySales[sku] || [];
       const avgRate = calculateAvgDailySellRate(sales, config.sellThroughWindow);
-      const daysLeft = calculateDaysUntilStockout(variant.inventory_quantity, avgRate);
+
+      // Inventory position = sellable now + everything in the pipeline that
+      // will hit the warehouse without further action. Skip uk3pl: it overlaps
+      // with Shopify's count and is just for the user's reconciliation.
+      const loc = stockLocations.locations[sku];
+      const pipelineStock = (loc?.china ?? 0) + (loc?.ordered ?? 0);
+      const currentStock = variant.inventory_quantity;
+      const inventoryPosition = currentStock + pipelineStock;
+
+      const daysLeft = calculateDaysUntilStockout(inventoryPosition, avgRate);
       const { status, reorderNeeded } = determineStockStatus(
         daysLeft,
         config.leadTimeDays,
@@ -189,7 +208,8 @@ export function buildDashboardRows(
         avgRate,
         config.leadTimeDays,
         config.deliveryTimeDays,
-        config.safetyStock
+        config.safetyStock,
+        pipelineStock
       );
 
       const alert = alerts.alerts[sku];
@@ -201,7 +221,9 @@ export function buildDashboardRows(
         variantTitle: variant.title,
         sku,
         imageUrl: product.image?.src,
-        currentStock: variant.inventory_quantity,
+        currentStock,
+        pipelineStock,
+        inventoryPosition,
         avgDailySellRate: avgRate,
         daysUntilStockout: daysLeft,
         reorderStatus: status,
@@ -282,6 +304,8 @@ export function buildProductGroups(
     const first = variants[0];
 
     const totalStock = variants.reduce((s, v) => s + v.currentStock, 0);
+    const totalPipelineStock = variants.reduce((s, v) => s + v.pipelineStock, 0);
+    const totalInventoryPosition = totalStock + totalPipelineStock;
     const totalAvgDailyRate = variants.reduce((s, v) => s + v.avgDailySellRate, 0);
     const totalSuggestedReorderQty = variants.reduce(
       (s, v) => s + v.moqSuggestedQty,
@@ -311,6 +335,8 @@ export function buildProductGroups(
       isFavourite,
       isAdvertised,
       totalStock,
+      totalPipelineStock,
+      totalInventoryPosition,
       totalAvgDailyRate,
       worstStatus,
       minDaysUntilStockout,
