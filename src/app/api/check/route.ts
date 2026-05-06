@@ -9,8 +9,8 @@ import {
   getProductConfigs,
   getStockLocations,
 } from "@/lib/storage";
-import { buildDashboardRows } from "@/lib/calculator";
-import { sendStockAlert } from "@/lib/telegram";
+import { buildDashboardRows, buildProductGroups } from "@/lib/calculator";
+import { sendProductReorderAlert } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
   try {
     const shouldSync = request.nextUrl.searchParams.get("sync") === "true";
 
-    // Optionally sync fresh data first
     if (shouldSync) {
       await syncFromShopify();
     }
@@ -38,42 +37,46 @@ export async function GET(request: NextRequest) {
       productConfigs,
       stockLocations
     );
+    const groups = buildProductGroups(rows, productConfigs);
 
     const alertsSent: Array<{
-      sku: string;
+      productId: string;
       productTitle: string;
-      daysUntilStockout: number | null;
+      skus: string[];
     }> = [];
 
-    for (const row of rows) {
-      if (!row.reorderNeeded) continue;
-
-      const existing = alertHistory.alerts[row.sku];
-
-      // Check if already alerted and not restocked
-      if (existing && !existing.dismissed) {
-        // Has stock been replenished since last alert? (20% increase threshold)
-        if (row.currentStock <= existing.inventoryAtAlert * 1.2) {
-          continue; // Skip - already alerted, not restocked
+    for (const group of groups) {
+      // Find variants that need reorder AND haven't been alerted on (or have
+      // been restocked >=20% since the last alert).
+      const triggering = group.variants.filter((v) => {
+        if (!v.reorderNeeded) return false;
+        const existing = alertHistory.alerts[v.sku];
+        if (existing && !existing.dismissed) {
+          if (v.currentStock <= existing.inventoryAtAlert * 1.2) return false;
         }
-      }
+        return true;
+      });
 
-      const sent = await sendStockAlert(row);
+      if (triggering.length === 0) continue;
 
-      if (sent) {
-        alertHistory.alerts[row.sku] = {
-          sku: row.sku,
-          alertedAt: new Date().toISOString(),
+      const sent = await sendProductReorderAlert(group);
+      if (!sent) continue;
+
+      // Record an alert for every variant we just included so dedup is honest.
+      const now = new Date().toISOString();
+      for (const v of triggering) {
+        alertHistory.alerts[v.sku] = {
+          sku: v.sku,
+          alertedAt: now,
           dismissed: false,
-          inventoryAtAlert: row.currentStock,
+          inventoryAtAlert: v.currentStock,
         };
-
-        alertsSent.push({
-          sku: row.sku,
-          productTitle: row.productTitle,
-          daysUntilStockout: row.daysUntilStockout,
-        });
       }
+      alertsSent.push({
+        productId: group.productId,
+        productTitle: group.productTitle,
+        skus: triggering.map((v) => v.sku),
+      });
     }
 
     await setAlertHistory(alertHistory);

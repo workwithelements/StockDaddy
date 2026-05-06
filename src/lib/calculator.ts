@@ -1,7 +1,6 @@
 import type {
   DailySalesEntry,
   StockStatus,
-  TrendBadge,
   SkuDashboardRow,
   CachedProductData,
   CachedOrderData,
@@ -23,9 +22,8 @@ const DEFAULT_COVER_PERIOD_DAYS = 30;
 // EWMA smoothing factor: weight given to the most recent day. Higher = more
 // reactive to recent activity, lower = more stable.
 const EWMA_ALPHA = 0.3;
-// Trend ratio thresholds: short-window rate ÷ long-window rate.
-const TREND_RISING_RATIO = 1.5;
-const TREND_FALLING_RATIO = 0.5;
+// Default minimum order quantity if no per-product MOQ is set.
+const DEFAULT_PRODUCT_MOQ = 100;
 
 export function getResolvedConfig(
   sku: string,
@@ -86,28 +84,6 @@ export function calculateAvgDailySellRate(
 
   if (totalWeight === 0) return 0;
   return Math.round((weightedSum / totalWeight) * 100) / 100;
-}
-
-/**
- * Compares short-window rate (7d) to long-window rate (30d). If recent
- * activity is materially higher (or lower) than the longer baseline, surface
- * a badge so the operator can spot post-relaunch / post-promo SKUs.
- */
-export function calculateTrendBadge(
-  dailySales: DailySalesEntry[],
-  shortWindow: number = 7,
-  longWindow: number = 30
-): { shortRate: number; longRate: number; badge: TrendBadge } {
-  const shortRate = calculateAvgDailySellRate(dailySales, shortWindow);
-  const longRate = calculateAvgDailySellRate(dailySales, longWindow);
-
-  // Need a meaningful baseline to compare against.
-  if (longRate < 0.1) return { shortRate, longRate, badge: null };
-
-  const ratio = shortRate / longRate;
-  if (ratio >= TREND_RISING_RATIO) return { shortRate, longRate, badge: "rising" };
-  if (ratio <= TREND_FALLING_RATIO) return { shortRate, longRate, badge: "falling" };
-  return { shortRate, longRate, badge: null };
 }
 
 export function calculateDaysUntilStockout(
@@ -263,13 +239,13 @@ export function buildDashboardRows(
       );
       const sales = orders.dailySales[sku] || [];
       const avgRate = calculateAvgDailySellRate(sales, config.sellThroughWindow);
-      const trend = calculateTrendBadge(sales);
 
-      // Inventory position = sellable now + everything in the pipeline that
-      // will hit the warehouse without further action. Skip uk3pl: it overlaps
-      // with Shopify's count and is just for the user's reconciliation.
+      // Inventory position = sellable now + on-order. We don't hold stock in
+      // China and uk3pl is the same physical stock as Shopify's count, so
+      // neither feeds in here.
       const loc = stockLocations.locations[sku];
-      const pipelineStock = (loc?.china ?? 0) + (loc?.ordered ?? 0);
+      const pipelineStock = loc?.ordered ?? 0;
+      const orderedExpectedDate = loc?.orderedExpectedDate;
       const currentStock = variant.inventory_quantity;
       const inventoryPosition = currentStock + pipelineStock;
 
@@ -309,11 +285,9 @@ export function buildDashboardRows(
         imageUrl: product.image?.src,
         currentStock,
         pipelineStock,
+        orderedExpectedDate,
         inventoryPosition,
         avgDailySellRate: avgRate,
-        shortWindowRate: trend.shortRate,
-        longWindowRate: trend.longRate,
-        trendBadge: trend.badge,
         daysUntilStockout: daysLeft,
         reorderStatus: status,
         reorderNeeded,
@@ -366,7 +340,9 @@ export function buildProductGroups(
 
   for (const [productId, variants] of groupMap) {
     const prodCfg = productConfigs.configs[productId];
-    const moq = prodCfg?.moq ?? 0;
+    // Treat 0 as "use default" so any product without a real MOQ set gets the
+    // 100-unit minimum the user wants by default.
+    const moq = prodCfg?.moq && prodCfg.moq > 0 ? prodCfg.moq : DEFAULT_PRODUCT_MOQ;
     const scaler = prodCfg?.scaler ?? 1;
     const isFavourite = prodCfg?.isFavourite ?? false;
     const isAdvertised = prodCfg?.isAdvertised ?? false;
@@ -406,8 +382,6 @@ export function buildProductGroups(
 
     let worstStatus: StockStatus = "green";
     let minDaysUntilStockout: number | null = null;
-    let risingCount = 0;
-    let fallingCount = 0;
     for (const v of variants) {
       if (statusOrder[v.reorderStatus] < statusOrder[worstStatus]) {
         worstStatus = v.reorderStatus;
@@ -420,13 +394,7 @@ export function buildProductGroups(
           minDaysUntilStockout = v.daysUntilStockout;
         }
       }
-      if (v.trendBadge === "rising") risingCount++;
-      if (v.trendBadge === "falling") fallingCount++;
     }
-
-    let trendBadge: TrendBadge = null;
-    if (risingCount > 0 && risingCount >= fallingCount) trendBadge = "rising";
-    else if (fallingCount > 0) trendBadge = "falling";
 
     groups.push({
       productId,
@@ -439,7 +407,6 @@ export function buildProductGroups(
       totalInventoryPosition,
       totalAvgDailyRate,
       worstStatus,
-      trendBadge,
       minDaysUntilStockout,
       moq,
       scaler,

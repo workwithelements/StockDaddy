@@ -22,10 +22,12 @@ interface Props {
   onBack: () => void;
 }
 
+type EditEntry = Partial<Pick<StockLocationEntry, "ordered" | "orderedExpectedDate">>;
+
 export default function ProductStockPage({ productId, onBack }: Props) {
   const [product, setProduct] = useState<ProductData | null>(null);
   const [locations, setLocations] = useState<Record<string, StockLocationEntry>>({});
-  const [editing, setEditing] = useState<Record<string, Partial<StockLocationEntry>>>({});
+  const [editing, setEditing] = useState<Record<string, EditEntry>>({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -49,20 +51,33 @@ export default function ProductStockPage({ productId, onBack }: Props) {
   }, [fetchData]);
 
   function getLocation(sku: string): StockLocationEntry {
-    return locations[sku] || { uk3pl: 0, china: 0, ordered: 0 };
+    return locations[sku] || { ordered: 0 };
   }
 
-  function getEditValue(sku: string, field: keyof StockLocationEntry): number {
-    const editVal = editing[sku]?.[field];
+  function getOrdered(sku: string): number {
+    const editVal = editing[sku]?.ordered;
     if (editVal !== undefined) return editVal;
-    return getLocation(sku)[field];
+    return getLocation(sku).ordered;
   }
 
-  function handleChange(sku: string, field: keyof StockLocationEntry, value: string) {
+  function getEta(sku: string): string {
+    const editVal = editing[sku]?.orderedExpectedDate;
+    if (editVal !== undefined) return editVal;
+    return getLocation(sku).orderedExpectedDate ?? "";
+  }
+
+  function setOrdered(sku: string, value: string) {
     const num = Math.max(0, parseInt(value) || 0);
     setEditing((prev) => ({
       ...prev,
-      [sku]: { ...prev[sku], [field]: num },
+      [sku]: { ...prev[sku], ordered: num },
+    }));
+  }
+
+  function setEta(sku: string, value: string) {
+    setEditing((prev) => ({
+      ...prev,
+      [sku]: { ...prev[sku], orderedExpectedDate: value },
     }));
   }
 
@@ -70,13 +85,13 @@ export default function ProductStockPage({ productId, onBack }: Props) {
     if (Object.keys(editing).length === 0) return;
     setSaving(true);
 
-    const updates: Record<string, Partial<StockLocationEntry>> = {};
+    const updates: Record<string, EditEntry> = {};
     for (const [sku, values] of Object.entries(editing)) {
       const current = getLocation(sku);
       updates[sku] = {
-        uk3pl: values.uk3pl ?? current.uk3pl,
-        china: values.china ?? current.china,
         ordered: values.ordered ?? current.ordered,
+        orderedExpectedDate:
+          values.orderedExpectedDate ?? current.orderedExpectedDate ?? "",
       };
     }
 
@@ -111,7 +126,6 @@ export default function ProductStockPage({ productId, onBack }: Props) {
 
   return (
     <div>
-      {/* Back + header */}
       <button
         onClick={onBack}
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
@@ -140,7 +154,6 @@ export default function ProductStockPage({ productId, onBack }: Props) {
         </div>
       </div>
 
-      {/* Stock table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -149,30 +162,20 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                 Variant
               </th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">
-                Shopify Stock
-              </th>
-              <th className="text-right px-4 py-3 font-medium text-indigo-600 bg-indigo-50/50">
-                UK 3PL
-              </th>
-              <th className="text-right px-4 py-3 font-medium text-indigo-600 bg-indigo-50/50">
-                China
+                Current Stock
               </th>
               <th className="text-right px-4 py-3 font-medium text-amber-600 bg-amber-50/50">
-                Ordered
+                On Order
               </th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">
-                Total Available
+              <th className="text-left px-4 py-3 font-medium text-amber-600 bg-amber-50/50">
+                Expected Arrival
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {product.variants.map((v) => {
-              const loc = getLocation(v.sku);
-              const uk3pl = getEditValue(v.sku, "uk3pl");
-              const china = getEditValue(v.sku, "china");
-              const ordered = getEditValue(v.sku, "ordered");
-              const totalAvailable = uk3pl + china;
-
+              const ordered = getOrdered(v.sku);
+              const eta = getEta(v.sku);
               return (
                 <tr key={v.sku} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">
@@ -181,35 +184,22 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                   <td className="px-4 py-3 text-right tabular-nums text-gray-600">
                     {v.currentStock}
                   </td>
-                  <td className="px-4 py-3 text-right bg-indigo-50/30">
-                    <input
-                      type="number"
-                      min={0}
-                      value={uk3pl}
-                      onChange={(e) => handleChange(v.sku, "uk3pl", e.target.value)}
-                      className="w-20 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-right bg-indigo-50/30">
-                    <input
-                      type="number"
-                      min={0}
-                      value={china}
-                      onChange={(e) => handleChange(v.sku, "china", e.target.value)}
-                      className="w-20 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </td>
                   <td className="px-4 py-3 text-right bg-amber-50/30">
                     <input
                       type="number"
                       min={0}
                       value={ordered}
-                      onChange={(e) => handleChange(v.sku, "ordered", e.target.value)}
-                      className="w-20 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      onChange={(e) => setOrdered(v.sku, e.target.value)}
+                      className="w-24 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium text-gray-900">
-                    {totalAvailable}
+                  <td className="px-4 py-3 bg-amber-50/30">
+                    <input
+                      type="date"
+                      value={eta}
+                      onChange={(e) => setEta(v.sku, e.target.value)}
+                      className="w-40 border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
                   </td>
                 </tr>
               );
@@ -221,31 +211,21 @@ export default function ProductStockPage({ productId, onBack }: Props) {
               <td className="px-4 py-3 text-right tabular-nums text-gray-600">
                 {product.variants.reduce((s, v) => s + v.currentStock, 0)}
               </td>
-              <td className="px-4 py-3 text-right tabular-nums text-gray-600 bg-indigo-50/30">
-                {product.variants.reduce((s, v) => s + getEditValue(v.sku, "uk3pl"), 0)}
-              </td>
-              <td className="px-4 py-3 text-right tabular-nums text-gray-600 bg-indigo-50/30">
-                {product.variants.reduce((s, v) => s + getEditValue(v.sku, "china"), 0)}
-              </td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-600 bg-amber-50/30">
-                {product.variants.reduce((s, v) => s + getEditValue(v.sku, "ordered"), 0)}
+                {product.variants.reduce((s, v) => s + getOrdered(v.sku), 0)}
               </td>
-              <td className="px-4 py-3 text-right tabular-nums font-medium text-gray-900">
-                {product.variants.reduce(
-                  (s, v) => s + getEditValue(v.sku, "uk3pl") + getEditValue(v.sku, "china"),
-                  0
-                )}
-              </td>
+              <td className="px-4 py-3 bg-amber-50/30"></td>
             </tr>
           </tfoot>
         </table>
       </div>
 
       <div className="mt-2 text-xs text-gray-400">
-        UK 3PL + China = Available stock. Ordered does not count towards available stock.
+        On-order stock counts toward your reorder calculation; current stock is
+        what&apos;s sellable now. Set an expected arrival date so future logic can
+        timeline incoming inventory.
       </div>
 
-      {/* Save bar */}
       {hasEdits && (
         <div className="mt-4 flex justify-end">
           <button

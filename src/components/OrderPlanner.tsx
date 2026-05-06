@@ -303,19 +303,17 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
             onClick={async () => {
               setAddingToOrdered(true);
               try {
-                // Fetch current locations to add on top
                 const locRes = await fetch("/api/stock-locations");
                 const locData = await locRes.json();
-                const current: Record<string, { uk3pl: number; china: number; ordered: number }> =
+                const current: Record<string, { ordered: number; orderedExpectedDate?: string }> =
                   locData.locations || {};
 
-                const updates: Record<string, { uk3pl: number; china: number; ordered: number }> = {};
+                const updates: Record<string, { ordered: number; orderedExpectedDate?: string }> = {};
                 for (const row of sizeSplit) {
-                  const existing = current[row.sku] || { uk3pl: 0, china: 0, ordered: 0 };
+                  const existing = current[row.sku] || { ordered: 0 };
                   updates[row.sku] = {
-                    uk3pl: existing.uk3pl,
-                    china: existing.china,
                     ordered: existing.ordered + row.qty,
+                    orderedExpectedDate: existing.orderedExpectedDate,
                   };
                 }
 
