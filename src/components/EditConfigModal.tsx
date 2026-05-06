@@ -73,10 +73,12 @@ export default function EditConfigModal({
             <select
               value={window}
               onChange={(e) =>
-                setWindow(parseInt(e.target.value) as 30 | 60 | 90)
+                setWindow(parseInt(e.target.value) as 7 | 14 | 30 | 60 | 90)
               }
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
+              <option value={7}>Last 7 days</option>
+              <option value={14}>Last 14 days</option>
               <option value={30}>Last 30 days</option>
               <option value={60}>Last 60 days</option>
               <option value={90}>Last 90 days</option>

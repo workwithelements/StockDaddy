@@ -13,7 +13,7 @@ import type {
 const DEFAULT_LEAD_TIME = 28;
 const DEFAULT_DELIVERY_TIME = 0;
 const DEFAULT_SAFETY_STOCK = 0;
-const DEFAULT_SELL_THROUGH_WINDOW: 30 | 60 | 90 = 30;
+const DEFAULT_SELL_THROUGH_WINDOW: 7 | 14 | 30 | 60 | 90 = 7;
 
 /**
  * Resolve config with fallback chain: SKU override → product config → defaults
@@ -27,7 +27,7 @@ export function getResolvedConfig(
   leadTimeDays: number;
   deliveryTimeDays: number;
   safetyStock: number;
-  sellThroughWindow: 30 | 60 | 90;
+  sellThroughWindow: 7 | 14 | 30 | 60 | 90;
 } {
   const skuCfg = skuConfigs.configs[sku];
   const prodCfg = productConfigs.configs[productId];

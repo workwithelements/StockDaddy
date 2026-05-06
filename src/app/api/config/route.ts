@@ -26,7 +26,7 @@ export async function PUT(request: NextRequest) {
     const existing: SkuConfig = store.configs[sku] || {
       sku,
       safetyStock: 0,
-      sellThroughWindow: 30 as const,
+      sellThroughWindow: 7 as const,
     };
 
     const updated: SkuConfig = {

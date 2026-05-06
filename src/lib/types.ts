@@ -42,7 +42,7 @@ export interface SkuConfig {
   leadTimeDays?: number;
   deliveryTimeDays?: number;
   safetyStock: number;
-  sellThroughWindow: 30 | 60 | 90;
+  sellThroughWindow: 7 | 14 | 30 | 60 | 90;
 }
 
 export interface SkuConfigStore {
