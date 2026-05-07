@@ -12,11 +12,17 @@ export async function POST(request: NextRequest) {
   try {
     const { sku, action } = await request.json();
 
+    const history = await getAlertHistory();
+
+    if (action === "resetAll") {
+      history.alerts = {};
+      await setAlertHistory(history);
+      return NextResponse.json({ success: true, cleared: "all" });
+    }
+
     if (!sku) {
       return NextResponse.json({ success: false, error: "SKU required" }, { status: 400 });
     }
-
-    const history = await getAlertHistory();
 
     if (action === "dismiss") {
       if (history.alerts[sku]) {
@@ -34,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: false, error: "Invalid action. Use 'dismiss' or 'clear'." },
+      { success: false, error: "Invalid action. Use 'dismiss', 'clear', or 'resetAll'." },
       { status: 400 }
     );
   } catch (err) {
