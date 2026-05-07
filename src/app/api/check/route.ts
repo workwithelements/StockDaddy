@@ -17,6 +17,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const shouldSync = request.nextUrl.searchParams.get("sync") === "true";
+    // ?force=true bypasses dedup so every currently-red SKU triggers an alert
+    // even if it was previously marked as alerted.
+    const force = request.nextUrl.searchParams.get("force") === "true";
 
     if (shouldSync) {
       await syncFromShopify();
@@ -50,6 +53,7 @@ export async function GET(request: NextRequest) {
       // been restocked >=20% since the last alert).
       const triggering = group.variants.filter((v) => {
         if (!v.reorderNeeded) return false;
+        if (force) return true;
         const existing = alertHistory.alerts[v.sku];
         if (existing && !existing.dismissed) {
           if (v.currentStock <= existing.inventoryAtAlert * 1.2) return false;

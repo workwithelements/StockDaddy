@@ -39,6 +39,9 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
   const [orderQty, setOrderQty] = useState<number>(100);
   const [window, setWindow] = useState<Window>(30);
   const [addingToOrdered, setAddingToOrdered] = useState(false);
+  // Per-SKU manual overrides for the suggested split. Cleared when product /
+  // total qty / window changes so we don't carry stale edits across products.
+  const [editedQtys, setEditedQtys] = useState<Record<string, number>>({});
 
   const fetchData = useCallback((w: Window) => {
     setLoading(true);
@@ -60,7 +63,13 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
     [groups, selectedProductId]
   );
 
-  const sizeSplit: SizeSplit[] = useMemo(() => {
+  // Reset edits when product / qty / window change so the suggested split
+  // re-applies cleanly.
+  useEffect(() => {
+    setEditedQtys({});
+  }, [selectedProductId, orderQty, window]);
+
+  const suggestedSplit: SizeSplit[] = useMemo(() => {
     if (!selectedGroup || orderQty <= 0) return [];
 
     const variants = selectedGroup.variants;
@@ -97,7 +106,6 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
       };
     });
 
-    // Fix rounding so total matches exactly
     const rawTotal = raw.reduce((s, r) => s + r.qty, 0);
     const diff = orderQty - rawTotal;
     if (diff !== 0) {
@@ -116,7 +124,26 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
     return raw;
   }, [selectedGroup, orderQty]);
 
+  // Final split: apply per-SKU overrides on top of the suggestion.
+  const sizeSplit: SizeSplit[] = useMemo(() => {
+    return suggestedSplit.map((row) => {
+      const override = editedQtys[row.sku];
+      const qty = override !== undefined ? override : row.qty;
+      return {
+        ...row,
+        qty,
+        postRestock: row.currentStock + qty,
+      };
+    });
+  }, [suggestedSplit, editedQtys]);
+
   const totalQty = sizeSplit.reduce((s, r) => s + r.qty, 0);
+  const hasEdits = Object.keys(editedQtys).length > 0;
+
+  function setRowQty(sku: string, value: string) {
+    const n = Math.max(0, parseInt(value) || 0);
+    setEditedQtys((prev) => ({ ...prev, [sku]: n }));
+  }
 
   if (loading && groups.length === 0) {
     return (
@@ -133,10 +160,10 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
       </h2>
       <p className="text-sm text-gray-500 mb-6">
         Select a product, enter total order quantity, and get the recommended
-        size split based on current sell rates.
+        size split based on current sell rates. Quantities are editable before
+        committing.
       </p>
 
-      {/* Controls */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -191,7 +218,6 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
         </div>
       </div>
 
-      {/* Results */}
       {selectedGroup && sizeSplit.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-3">
@@ -212,8 +238,19 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
               <div className="text-xs text-gray-500">
                 {totalQty} units across {sizeSplit.length} sizes
                 &middot; based on {window}-day sell rate
+                {hasEdits && (
+                  <span className="ml-2 text-amber-600">· edited</span>
+                )}
               </div>
             </div>
+            {hasEdits && (
+              <button
+                onClick={() => setEditedQtys({})}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Reset to suggested
+              </button>
+            )}
           </div>
 
           <table className="w-full text-sm">
@@ -245,8 +282,14 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
                   <td className="px-4 py-2.5 font-medium text-gray-900">
                     {row.variantTitle}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">
-                    {row.qty}
+                  <td className="px-4 py-2.5 text-right">
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.qty}
+                      onChange={(e) => setRowQty(row.sku, e.target.value)}
+                      className="w-20 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">
                     {(row.proportion * 100).toFixed(0)}%
@@ -296,7 +339,6 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
         </div>
       )}
 
-      {/* Add to Ordered button */}
       {selectedGroup && sizeSplit.length > 0 && (
         <div className="mt-4 flex justify-end">
           <button
@@ -310,6 +352,7 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
 
                 const updates: Record<string, { ordered: number; orderedExpectedDate?: string }> = {};
                 for (const row of sizeSplit) {
+                  if (row.qty <= 0) continue;
                   const existing = current[row.sku] || { ordered: 0 };
                   updates[row.sku] = {
                     ordered: existing.ordered + row.qty,
@@ -329,7 +372,7 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
                 setAddingToOrdered(false);
               }
             }}
-            disabled={addingToOrdered}
+            disabled={addingToOrdered || totalQty <= 0}
             className="px-4 py-2 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50"
           >
             {addingToOrdered ? "Adding..." : `Add ${totalQty} to Ordered`}

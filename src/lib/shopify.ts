@@ -1,5 +1,11 @@
 import type { ShopifyProduct, CachedProductData, CachedOrderData, DailySalesEntry } from "./types";
-import { setProductCache, setOrderCache } from "./storage";
+import {
+  setProductCache,
+  setOrderCache,
+  getProductCache,
+  getStockLocations,
+  setStockLocations,
+} from "./storage";
 
 const API_VERSION = "2024-01";
 
@@ -153,6 +159,20 @@ export async function syncFromShopify(): Promise<{
   products: CachedProductData;
   orders: CachedOrderData;
 }> {
+  // 0. Capture pre-sync inventory by SKU so we can detect restock arrivals
+  //    after the new data lands.
+  const previousCache = await getProductCache();
+  const prevInventoryBySku = new Map<string, number>();
+  for (const p of previousCache.products) {
+    for (const v of p.variants) {
+      const sku = v.sku || `_auto_${p.id}_${v.id}`;
+      prevInventoryBySku.set(sku, v.inventory_quantity);
+    }
+  }
+  const lastSyncDate = previousCache.lastSyncedAt
+    ? previousCache.lastSyncedAt.split("T")[0]
+    : "";
+
   // 1. Fetch all products
   const products = await fetchAllProducts();
 
@@ -196,6 +216,49 @@ export async function syncFromShopify(): Promise<{
   // 7. Aggregate into daily sales
   const dailySales = aggregateOrdersToDaily(orders, variantSkuMap);
 
+  // 8. Reconcile incoming orders against actual stock arrivals.
+  //    For each variant, if Shopify inventory went up (after accounting for
+  //    sales since the last sync), assume the increase is a restock landing
+  //    and decrement the SKU's `ordered` value by that amount.
+  const stockLocations = await getStockLocations();
+  let reconcileMade = false;
+  if (lastSyncDate) {
+    for (const product of products) {
+      for (const variant of product.variants) {
+        const sku = variant.sku || `_auto_${product.id}_${variant.id}`;
+        const prevInv = prevInventoryBySku.get(sku);
+        if (prevInv === undefined) continue;
+        const newInv = variant.inventory_quantity;
+
+        const sinceSales = (dailySales[sku] ?? [])
+          .filter((e) => e.date > lastSyncDate)
+          .reduce((s, e) => s + e.quantity, 0);
+
+        // restocks = newInv - prevInv + sales_in_window
+        // (rearranging newInv = prevInv - sales + restocks)
+        const restocks = newInv - prevInv + sinceSales;
+        if (restocks <= 0) continue;
+
+        const loc = stockLocations.locations[sku];
+        const currentOrdered = loc?.ordered ?? 0;
+        if (currentOrdered <= 0) continue;
+
+        const decrement = Math.min(restocks, currentOrdered);
+        const newOrdered = currentOrdered - decrement;
+        stockLocations.locations[sku] = {
+          ordered: newOrdered,
+          orderedExpectedDate:
+            newOrdered === 0 ? undefined : loc?.orderedExpectedDate,
+        };
+        reconcileMade = true;
+      }
+    }
+  }
+  if (reconcileMade) {
+    stockLocations.updatedAt = new Date().toISOString();
+    await setStockLocations(stockLocations);
+  }
+
   const now = new Date().toISOString();
 
   const productData: CachedProductData = {
@@ -210,7 +273,6 @@ export async function syncFromShopify(): Promise<{
     newestOrderDate: new Date().toISOString().split("T")[0],
   };
 
-  // 7. Write to storage
   await setProductCache(productData);
   await setOrderCache(orderData);
 
