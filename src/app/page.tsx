@@ -159,7 +159,11 @@ export default function Home() {
         {viewingProductId ? (
           <ProductStockPage
             productId={viewingProductId}
-            onBack={() => setViewingProductId(null)}
+            onBack={() => {
+              setViewingProductId(null);
+              // Refresh dashboard data so any on-order edits are reflected.
+              fetchDashboard();
+            }}
           />
         ) : activeTab === "dashboard" ? (
           <DashboardTable
