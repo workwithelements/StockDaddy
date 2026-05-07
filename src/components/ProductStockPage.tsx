@@ -22,16 +22,21 @@ interface Props {
   onBack: () => void;
 }
 
-type EditEntry = Partial<Pick<StockLocationEntry, "ordered" | "orderedExpectedDate">>;
-
 export default function ProductStockPage({ productId, onBack }: Props) {
   const [product, setProduct] = useState<ProductData | null>(null);
   const [locations, setLocations] = useState<Record<string, StockLocationEntry>>({});
-  const [editing, setEditing] = useState<Record<string, EditEntry>>({});
+  const [loading, setLoading] = useState(true);
+  // Per-SKU draft of the ordered qty. Empty means "no edits".
+  const [editedQtys, setEditedQtys] = useState<Record<string, number>>({});
+  // One date input applied to every size on save. Initialised from the first
+  // variant that has one stored.
+  const [productEta, setProductEta] = useState<string>("");
+  const [etaEdited, setEtaEdited] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
     const [planRes, locRes] = await Promise.all([
       fetch("/api/order-plan?window=14"),
       fetch("/api/stock-locations"),
@@ -43,55 +48,48 @@ export default function ProductStockPage({ productId, onBack }: Props) {
       (g: ProductData) => g.productId === productId
     );
     if (group) setProduct(group);
-    setLocations(locData.locations || {});
+    const locs: Record<string, StockLocationEntry> = locData.locations || {};
+    setLocations(locs);
+
+    // Derive a product-wide ETA from any variant that has one stored.
+    if (group) {
+      const firstDate = group.variants
+        .map((v: ProductVariant) => locs[v.sku]?.orderedExpectedDate)
+        .find((d: string | undefined) => d && d.length > 0);
+      setProductEta(firstDate || "");
+      setEtaEdited(false);
+    }
+    setEditedQtys({});
+    setLoading(false);
   }, [productId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  function getLocation(sku: string): StockLocationEntry {
-    return locations[sku] || { ordered: 0 };
-  }
-
   function getOrdered(sku: string): number {
-    const editVal = editing[sku]?.ordered;
+    const editVal = editedQtys[sku];
     if (editVal !== undefined) return editVal;
-    return getLocation(sku).ordered;
-  }
-
-  function getEta(sku: string): string {
-    const editVal = editing[sku]?.orderedExpectedDate;
-    if (editVal !== undefined) return editVal;
-    return getLocation(sku).orderedExpectedDate ?? "";
+    return locations[sku]?.ordered ?? 0;
   }
 
   function setOrdered(sku: string, value: string) {
     const num = Math.max(0, parseInt(value) || 0);
-    setEditing((prev) => ({
-      ...prev,
-      [sku]: { ...prev[sku], ordered: num },
-    }));
-  }
-
-  function setEta(sku: string, value: string) {
-    setEditing((prev) => ({
-      ...prev,
-      [sku]: { ...prev[sku], orderedExpectedDate: value },
-    }));
+    setEditedQtys((prev) => ({ ...prev, [sku]: num }));
   }
 
   async function handleSave() {
-    if (Object.keys(editing).length === 0) return;
+    if (!product) return;
     setSaving(true);
 
-    const updates: Record<string, EditEntry> = {};
-    for (const [sku, values] of Object.entries(editing)) {
-      const current = getLocation(sku);
-      updates[sku] = {
-        ordered: values.ordered ?? current.ordered,
-        orderedExpectedDate:
-          values.orderedExpectedDate ?? current.orderedExpectedDate ?? "",
+    const updates: Record<
+      string,
+      { ordered: number; orderedExpectedDate?: string }
+    > = {};
+    for (const v of product.variants) {
+      updates[v.sku] = {
+        ordered: getOrdered(v.sku),
+        orderedExpectedDate: productEta || undefined,
       };
     }
 
@@ -101,7 +99,6 @@ export default function ProductStockPage({ productId, onBack }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ updates }),
       });
-      setEditing({});
       await fetchData();
       showToast("Stock locations saved");
     } catch {
@@ -116,13 +113,50 @@ export default function ProductStockPage({ productId, onBack }: Props) {
     setTimeout(() => setToast(null), 3000);
   }
 
-  if (!product) {
+  if (loading || !product) {
     return (
-      <div className="text-center py-12 text-gray-400">Loading...</div>
+      <div>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+        <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
+          <svg
+            className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-400"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          Loading stock locations...
+        </div>
+      </div>
     );
   }
 
-  const hasEdits = Object.keys(editing).length > 0;
+  const hasEdits =
+    Object.keys(editedQtys).length > 0 || etaEdited;
+  const totalOrdered = product.variants.reduce(
+    (s, v) => s + getOrdered(v.sku),
+    0
+  );
 
   return (
     <div>
@@ -154,6 +188,28 @@ export default function ProductStockPage({ productId, onBack }: Props) {
         </div>
       </div>
 
+      {/* One ETA input applied to all sizes */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4 flex items-center gap-4">
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Expected Arrival (all sizes)
+          </label>
+          <p className="text-xs text-gray-500">
+            Single delivery date for the in-progress order. Updates every
+            variant on save.
+          </p>
+        </div>
+        <input
+          type="date"
+          value={productEta}
+          onChange={(e) => {
+            setProductEta(e.target.value);
+            setEtaEdited(true);
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -167,43 +223,28 @@ export default function ProductStockPage({ productId, onBack }: Props) {
               <th className="text-right px-4 py-3 font-medium text-amber-600 bg-amber-50/50">
                 On Order
               </th>
-              <th className="text-left px-4 py-3 font-medium text-amber-600 bg-amber-50/50">
-                Expected Arrival
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {product.variants.map((v) => {
-              const ordered = getOrdered(v.sku);
-              const eta = getEta(v.sku);
-              return (
-                <tr key={v.sku} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {v.variantTitle}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-600">
-                    {v.currentStock}
-                  </td>
-                  <td className="px-4 py-3 text-right bg-amber-50/30">
-                    <input
-                      type="number"
-                      min={0}
-                      value={ordered}
-                      onChange={(e) => setOrdered(v.sku, e.target.value)}
-                      className="w-24 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </td>
-                  <td className="px-4 py-3 bg-amber-50/30">
-                    <input
-                      type="date"
-                      value={eta}
-                      onChange={(e) => setEta(v.sku, e.target.value)}
-                      className="w-40 border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </td>
-                </tr>
-              );
-            })}
+            {product.variants.map((v) => (
+              <tr key={v.sku} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  {v.variantTitle}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                  {v.currentStock}
+                </td>
+                <td className="px-4 py-3 text-right bg-amber-50/30">
+                  <input
+                    type="number"
+                    min={0}
+                    value={getOrdered(v.sku)}
+                    onChange={(e) => setOrdered(v.sku, e.target.value)}
+                    className="w-24 text-right tabular-nums border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </td>
+              </tr>
+            ))}
           </tbody>
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">
@@ -212,24 +253,27 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                 {product.variants.reduce((s, v) => s + v.currentStock, 0)}
               </td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-600 bg-amber-50/30">
-                {product.variants.reduce((s, v) => s + getOrdered(v.sku), 0)}
+                {totalOrdered}
               </td>
-              <td className="px-4 py-3 bg-amber-50/30"></td>
             </tr>
           </tfoot>
         </table>
       </div>
 
       <div className="mt-2 text-xs text-gray-400">
-        On-order stock counts toward your reorder calculation; current stock is
-        what&apos;s sellable now. Set an expected arrival date so future logic can
-        timeline incoming inventory.
+        On-order stock counts toward your reorder calculation. When the order
+        arrives at the warehouse, the next sync will reduce these values
+        automatically based on Shopify&apos;s inventory delta.
       </div>
 
       {hasEdits && (
         <div className="mt-4 flex justify-end">
           <button
-            onClick={() => setEditing({})}
+            onClick={() => {
+              setEditedQtys({});
+              setEtaEdited(false);
+              fetchData();
+            }}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 mr-2"
           >
             Cancel
