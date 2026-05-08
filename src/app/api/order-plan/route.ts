@@ -11,7 +11,14 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   const windowParam = request.nextUrl.searchParams.get("window");
-  const windowDays = windowParam === "7" ? 7 : windowParam === "14" ? 14 : 30;
+  const windowDays =
+    windowParam === "3"
+      ? 3
+      : windowParam === "7"
+      ? 7
+      : windowParam === "14"
+      ? 14
+      : 30;
 
   const products = await getProductCache();
   const orders = await getOrderCache();

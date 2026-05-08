@@ -26,7 +26,7 @@ interface SizeSplit {
   postRestock: number;
 }
 
-type Window = 7 | 14 | 30;
+type Window = 3 | 7 | 14 | 30;
 
 interface OrderPlannerProps {
   onViewProduct: (productId: string) => void;
@@ -199,12 +199,12 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
             Sell Rate Window
           </label>
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-            {([7, 14, 30] as const).map((w) => (
+            {([3, 7, 14, 30] as const).map((w) => (
               <button
                 key={w}
                 onClick={() => setWindow(w)}
                 className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                  w !== 7 ? "border-l border-gray-300" : ""
+                  w !== 3 ? "border-l border-gray-300" : ""
                 } ${
                   window === w
                     ? "bg-indigo-600 text-white"
