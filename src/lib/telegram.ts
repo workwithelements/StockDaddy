@@ -58,7 +58,7 @@ export async function sendProductReorderAlert(
     const incoming =
       v.pipelineStock > 0 ? ` (+${v.pipelineStock} on order)` : "";
     const eta = v.orderedExpectedDate
-      ? ` · ETA ${escapeHtml(v.orderedExpectedDate)}`
+      ? ` · earliest ETA ${escapeHtml(v.orderedExpectedDate)}`
       : "";
     const daysLeft = v.daysUntilStockout ?? "—";
     lines.push(

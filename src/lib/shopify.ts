@@ -6,6 +6,7 @@ import {
   getStockLocations,
   setStockLocations,
 } from "./storage";
+import { deductFromBatches, normalizeEntry } from "./orderedBatches";
 
 const API_VERSION = "2024-01";
 
@@ -239,16 +240,12 @@ export async function syncFromShopify(): Promise<{
         const restocks = newInv - prevInv + sinceSales;
         if (restocks <= 0) continue;
 
-        const loc = stockLocations.locations[sku];
-        const currentOrdered = loc?.ordered ?? 0;
-        if (currentOrdered <= 0) continue;
+        const loc = normalizeEntry(stockLocations.locations[sku]);
+        const { batches, deducted } = deductFromBatches(loc, restocks);
+        if (deducted <= 0) continue;
 
-        const decrement = Math.min(restocks, currentOrdered);
-        const newOrdered = currentOrdered - decrement;
         stockLocations.locations[sku] = {
-          ordered: newOrdered,
-          orderedExpectedDate:
-            newOrdered === 0 ? undefined : loc?.orderedExpectedDate,
+          orderedBatches: batches,
         };
         reconcileMade = true;
       }

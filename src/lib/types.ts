@@ -85,12 +85,23 @@ export interface AlertHistoryStore {
 
 // === Stock Locations ===
 
+export interface OrderedBatch {
+  id: string;
+  qty: number;
+  /** ISO date (yyyy-mm-dd) when the batch is expected to land. */
+  expectedDate?: string;
+  /** ISO date (yyyy-mm-dd) when the PO was raised. */
+  placedDate?: string;
+}
+
 export interface StockLocationEntry {
-  ordered: number;
-  /** ISO date (yyyy-mm-dd) when the on-order stock is expected to arrive. */
+  /** Array of in-flight order batches. Each batch is one PO line for this SKU. */
+  orderedBatches: OrderedBatch[];
+  /** Legacy single-order fields. Kept optional so older blob entries still
+   *  deserialize; on first write we migrate them into orderedBatches. */
+  ordered?: number;
   orderedExpectedDate?: string;
-  /** Legacy fields, retained so old blob entries still deserialize. Not used
-   *  in reorder math or surfaced in the UI. */
+  /** Legacy fields, no longer surfaced. */
   uk3pl?: number;
   china?: number;
 }

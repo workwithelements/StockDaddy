@@ -42,6 +42,8 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
   // Per-SKU manual overrides for the suggested split. Cleared when product /
   // total qty / window changes so we don't carry stale edits across products.
   const [editedQtys, setEditedQtys] = useState<Record<string, number>>({});
+  // ETA stamped on the batch we're about to commit (yyyy-mm-dd, or "" for none).
+  const [batchEta, setBatchEta] = useState<string>("");
 
   const fetchData = useCallback((w: Window) => {
     setLoading(true);
@@ -340,30 +342,36 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
       )}
 
       {selectedGroup && sizeSplit.length > 0 && (
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex flex-wrap items-end justify-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Expected Arrival
+            </label>
+            <input
+              type="date"
+              value={batchEta}
+              onChange={(e) => setBatchEta(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
           <button
             onClick={async () => {
               setAddingToOrdered(true);
               try {
-                const locRes = await fetch("/api/stock-locations");
-                const locData = await locRes.json();
-                const current: Record<string, { ordered: number; orderedExpectedDate?: string }> =
-                  locData.locations || {};
-
-                const updates: Record<string, { ordered: number; orderedExpectedDate?: string }> = {};
+                const items: Record<string, number> = {};
                 for (const row of sizeSplit) {
-                  if (row.qty <= 0) continue;
-                  const existing = current[row.sku] || { ordered: 0 };
-                  updates[row.sku] = {
-                    ordered: existing.ordered + row.qty,
-                    orderedExpectedDate: existing.orderedExpectedDate,
-                  };
+                  if (row.qty > 0) items[row.sku] = row.qty;
                 }
-
                 await fetch("/api/stock-locations", {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ updates }),
+                  body: JSON.stringify({
+                    addBatch: {
+                      expectedDate: batchEta || undefined,
+                      placedDate: new Date().toISOString().split("T")[0],
+                      items,
+                    },
+                  }),
                 });
                 onViewProduct(selectedGroup.productId);
               } catch {
@@ -375,7 +383,7 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
             disabled={addingToOrdered || totalQty <= 0}
             className="px-4 py-2 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50"
           >
-            {addingToOrdered ? "Adding..." : `Add ${totalQty} to Ordered`}
+            {addingToOrdered ? "Adding..." : `Add ${totalQty} as new order`}
           </button>
         </div>
       )}
