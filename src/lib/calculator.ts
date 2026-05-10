@@ -10,6 +10,7 @@ import type {
   ProductGroupRow,
   StockLocationStore,
 } from "./types";
+import { totalOrdered, earliestEta } from "./orderedBatches";
 
 const DEFAULT_LEAD_TIME = 28;
 const DEFAULT_DELIVERY_TIME = 0;
@@ -244,8 +245,8 @@ export function buildDashboardRows(
       // China and uk3pl is the same physical stock as Shopify's count, so
       // neither feeds in here.
       const loc = stockLocations.locations[sku];
-      const pipelineStock = loc?.ordered ?? 0;
-      const orderedExpectedDate = loc?.orderedExpectedDate;
+      const pipelineStock = totalOrdered(loc);
+      const orderedExpectedDate = earliestEta(loc);
       const currentStock = variant.inventory_quantity;
       const inventoryPosition = currentStock + pipelineStock;
 
