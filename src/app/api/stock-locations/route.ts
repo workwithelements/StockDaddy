@@ -37,6 +37,9 @@ interface PutBody {
   /** Mode: mark a batch received — same as deleteBatch (ledger goes to 0
    *  and the deduction shows up via Shopify on next sync). */
   receiveBatch?: { batchId: string };
+  /** Mode: update fields (currently date only) on every SKU's copy of a batch
+   *  with the given id. Used to revise ETAs on an in-flight PO. */
+  updateBatch?: { batchId: string; expectedDate?: string };
 }
 
 export async function PUT(request: NextRequest) {
@@ -77,6 +80,20 @@ export async function PUT(request: NextRequest) {
       if (filtered.length !== normalised.orderedBatches.length) {
         store.locations[sku] = { ...normalised, orderedBatches: filtered };
       }
+    }
+  }
+
+  if (body.updateBatch) {
+    const { batchId, expectedDate } = body.updateBatch;
+    for (const [sku, entry] of Object.entries(store.locations)) {
+      const normalised = normalizeEntry(entry);
+      let touched = false;
+      const next = normalised.orderedBatches.map((b) => {
+        if (b.id !== batchId) return b;
+        touched = true;
+        return { ...b, expectedDate: expectedDate || undefined };
+      });
+      if (touched) store.locations[sku] = { ...normalised, orderedBatches: next };
     }
   }
 

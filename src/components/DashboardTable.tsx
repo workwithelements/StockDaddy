@@ -15,7 +15,7 @@ interface DashboardTableProps {
   onViewProduct: (productId: string) => void;
 }
 
-type FilterTab = "all" | "red" | "yellow" | "green";
+type FilterTab = "starred" | "all" | "red" | "yellow" | "green";
 
 export default function DashboardTable({
   groups,
@@ -24,7 +24,15 @@ export default function DashboardTable({
   onToggleFavourite,
   onViewProduct,
 }: DashboardTableProps) {
-  const [filter, setFilter] = useState<FilterTab>("all");
+  // Default to "starred" if there are any favourites, otherwise "all".
+  // Snapshot the decision once per mount so toggling stars doesn't yank
+  // the filter out from under the user.
+  const initialFilter: FilterTab = useMemo(
+    () => (groups.some((g) => g.isFavourite) ? "starred" : "all"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  const [filter, setFilter] = useState<FilterTab>(initialFilter);
   const [search, setSearch] = useState("");
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(
     new Set()
@@ -33,6 +41,7 @@ export default function DashboardTable({
 
   const counts = useMemo(() => {
     return {
+      starred: groups.filter((g) => g.isFavourite).length,
       all: groups.length,
       red: groups.filter((g) => g.worstStatus === "red").length,
       yellow: groups.filter((g) => g.worstStatus === "yellow").length,
@@ -43,18 +52,16 @@ export default function DashboardTable({
   const filteredGroups = useMemo(() => {
     let result = groups;
 
-    // Filter by status tab
-    if (filter !== "all") {
+    if (filter === "starred") {
+      result = result.filter((g) => g.isFavourite);
+    } else if (filter !== "all") {
       result = result.filter((g) => g.worstStatus === filter);
     }
 
-    // Filter by search
     if (search) {
       const q = search.toLowerCase();
       result = result.filter((g) => {
-        // Match on product title
         if (g.productTitle.toLowerCase().includes(q)) return true;
-        // Match on any variant
         return g.variants.some(
           (v) =>
             v.variantTitle.toLowerCase().includes(q) ||
@@ -79,6 +86,7 @@ export default function DashboardTable({
   }
 
   const tabs: Array<{ key: FilterTab; label: string; color: string }> = [
+    { key: "starred", label: "★ Starred", color: "bg-amber-100 text-amber-700" },
     { key: "all", label: "All", color: "bg-gray-100 text-gray-700" },
     { key: "red", label: "Reorder", color: "bg-red-100 text-red-700" },
     {
