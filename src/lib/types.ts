@@ -128,6 +128,12 @@ export interface SkuDashboardRow {
   inventoryPosition: number;
   avgDailySellRate: number;
   daysUntilStockout: number | null;
+  /** ISO date (yyyy-mm-dd) when stock is first projected to hit 0, accounting
+   *  for the timing of each incoming batch. null when there are no sales. */
+  nextStockoutDate?: string;
+  /** True when current/pipeline stock will hit 0 BEFORE the latest scheduled
+   *  batch arrives — i.e. there's a gap in supply we can't cover. */
+  hasGap: boolean;
   reorderStatus: StockStatus;
   reorderNeeded: boolean;
   reorderPoint: number;

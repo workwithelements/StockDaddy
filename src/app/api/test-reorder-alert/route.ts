@@ -27,6 +27,7 @@ function makeVariant(
     inventoryPosition,
     avgDailySellRate: avgRate,
     daysUntilStockout,
+    hasGap: false,
     reorderStatus: "red",
     reorderNeeded: true,
     reorderPoint: Math.ceil(avgRate * 28) + 14,
