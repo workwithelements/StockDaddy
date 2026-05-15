@@ -114,9 +114,18 @@ export function calculateRunwayWithArrivals(
   daysUntilFirstStockout: number | null;
   firstStockoutDate: string | null;
   hasGap: boolean;
+  /** Total qty across batches that don't have an ETA. These can't be
+   *  scheduled into the runway sim, so we surface them separately for UI
+   *  warnings rather than silently crediting them as already-in-hand. */
+  undatedQty: number;
 } {
   if (avgDailySellRate <= 0) {
-    return { daysUntilFirstStockout: null, firstStockoutDate: null, hasGap: false };
+    return {
+      daysUntilFirstStockout: null,
+      firstStockoutDate: null,
+      hasGap: false,
+      undatedQty: 0,
+    };
   }
 
   // Normalise today to UTC midnight for stable day arithmetic.
@@ -126,13 +135,16 @@ export function calculateRunwayWithArrivals(
     today.getUTCDate()
   );
 
-  // Sort dated batches; lump undated into starting stock.
+  // Only dated batches participate in the timeline simulation. Undated
+  // batches are reported separately so the UI can prompt the user to set
+  // an ETA — they no longer silently bridge stockouts.
   const dated: { day: number; qty: number }[] = [];
+  let undatedQty = 0;
   let stock = currentStock;
   for (const b of batches) {
     if (b.qty <= 0) continue;
     if (!b.expectedDate) {
-      stock += b.qty;
+      undatedQty += b.qty;
       continue;
     }
     const eta = Date.UTC(
@@ -161,8 +173,6 @@ export function calculateRunwayWithArrivals(
     pointer = batch.day;
   }
 
-  // Final tail — stock burns down from `pointer` until it hits zero (only if
-  // we haven't already recorded a stockout).
   let stockoutDay: number | null = firstStockoutDay;
   if (stockoutDay === null) {
     const remainingDays = stock / avgDailySellRate;
@@ -179,6 +189,7 @@ export function calculateRunwayWithArrivals(
     daysUntilFirstStockout: days,
     firstStockoutDate: iso,
     hasGap,
+    undatedQty,
   };
 }
 
@@ -401,6 +412,7 @@ export function buildDashboardRows(
         daysUntilStockout: daysLeft,
         nextStockoutDate: runway.firstStockoutDate ?? undefined,
         hasGap: runway.hasGap,
+        undatedOnOrder: runway.undatedQty,
         reorderStatus: status,
         reorderNeeded,
         reorderPoint,

@@ -134,6 +134,9 @@ export interface SkuDashboardRow {
   /** True when current/pipeline stock will hit 0 BEFORE the latest scheduled
    *  batch arrives — i.e. there's a gap in supply we can't cover. */
   hasGap: boolean;
+  /** Sum of qty across batches missing an ETA. Excluded from the runway
+   *  simulation; surfaced separately so the user can set the missing date. */
+  undatedOnOrder: number;
   reorderStatus: StockStatus;
   reorderNeeded: boolean;
   reorderPoint: number;
