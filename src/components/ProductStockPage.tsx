@@ -287,6 +287,7 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                 <th className="text-right px-4 py-2 font-medium text-amber-700 bg-amber-50/40">On Order</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Avg/Day</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Days Left</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-500">Stockout</th>
                 <th className="text-center px-4 py-2 font-medium text-gray-500">Status</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Order Qty</th>
               </tr>
@@ -308,6 +309,22 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-600">
                       {d && d.daysUntilStockout !== null ? d.daysUntilStockout : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {d?.nextStockoutDate ? (
+                        <span
+                          className={
+                            d.hasGap
+                              ? "inline-flex items-center gap-1 text-red-700 font-medium"
+                              : "text-gray-500"
+                          }
+                        >
+                          {d.hasGap && "⚠ "}
+                          {d.nextStockoutDate}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-center">
                       {d ? <StatusBadge status={d.reorderStatus} /> : "—"}
@@ -336,6 +353,7 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                 <td className="px-4 py-2 text-right tabular-nums">
                   {dashboardGroup.minDaysUntilStockout ?? "—"}
                 </td>
+                <td className="px-4 py-2" />
                 <td className="px-4 py-2 text-center">
                   <StatusBadge status={dashboardGroup.worstStatus} />
                 </td>

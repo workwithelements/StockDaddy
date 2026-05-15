@@ -382,6 +382,14 @@ function ProductGroup({
               {variant.daysUntilStockout !== null
                 ? variant.daysUntilStockout
                 : "--"}
+              {variant.hasGap && (
+                <div
+                  className="text-xs text-red-600 font-medium"
+                  title="Stock will hit 0 before all incoming batches arrive"
+                >
+                  ⚠ gap
+                </div>
+              )}
             </td>
             <td className="px-4 py-2 text-center">
               <StatusBadge status={variant.reorderStatus} />

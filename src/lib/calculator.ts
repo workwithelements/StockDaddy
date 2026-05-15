@@ -96,6 +96,93 @@ export function calculateDaysUntilStockout(
 }
 
 /**
+ * Walk forward day-by-day from `today`, burning stock at avgDailySellRate and
+ * adding each batch's qty on its expectedDate. Returns the day on which the
+ * SKU first runs out (or null if it never does), plus whether that stockout
+ * sits BEFORE the last scheduled arrival (= a real coverage gap, vs a clean
+ * runway after all pipeline lands).
+ *
+ * Undated batches are folded into the starting stock — they're assumed to be
+ * "in hand" since we can't model their arrival.
+ */
+export function calculateRunwayWithArrivals(
+  currentStock: number,
+  avgDailySellRate: number,
+  batches: import("./types").OrderedBatch[],
+  today: Date = new Date()
+): {
+  daysUntilFirstStockout: number | null;
+  firstStockoutDate: string | null;
+  hasGap: boolean;
+} {
+  if (avgDailySellRate <= 0) {
+    return { daysUntilFirstStockout: null, firstStockoutDate: null, hasGap: false };
+  }
+
+  // Normalise today to UTC midnight for stable day arithmetic.
+  const t0 = Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate()
+  );
+
+  // Sort dated batches; lump undated into starting stock.
+  const dated: { day: number; qty: number }[] = [];
+  let stock = currentStock;
+  for (const b of batches) {
+    if (b.qty <= 0) continue;
+    if (!b.expectedDate) {
+      stock += b.qty;
+      continue;
+    }
+    const eta = Date.UTC(
+      Number(b.expectedDate.slice(0, 4)),
+      Number(b.expectedDate.slice(5, 7)) - 1,
+      Number(b.expectedDate.slice(8, 10))
+    );
+    const day = Math.max(0, Math.round((eta - t0) / 86400000));
+    dated.push({ day, qty: b.qty });
+  }
+  dated.sort((a, b) => a.day - b.day);
+
+  let pointer = 0;
+  let firstStockoutDay: number | null = null;
+  let lastBatchDay = 0;
+  for (const batch of dated) {
+    lastBatchDay = Math.max(lastBatchDay, batch.day);
+    const burn = (batch.day - pointer) * avgDailySellRate;
+    if (burn >= stock && firstStockoutDay === null) {
+      firstStockoutDay = pointer + stock / avgDailySellRate;
+      stock = 0;
+    } else {
+      stock = Math.max(0, stock - burn);
+    }
+    stock += batch.qty;
+    pointer = batch.day;
+  }
+
+  // Final tail — stock burns down from `pointer` until it hits zero (only if
+  // we haven't already recorded a stockout).
+  let stockoutDay: number | null = firstStockoutDay;
+  if (stockoutDay === null) {
+    const remainingDays = stock / avgDailySellRate;
+    stockoutDay = pointer + remainingDays;
+  }
+
+  const hasGap = firstStockoutDay !== null && firstStockoutDay < lastBatchDay;
+  const days = Math.floor(stockoutDay);
+  const dateMs = t0 + days * 86400000;
+  const d = new Date(dateMs);
+  const iso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+
+  return {
+    daysUntilFirstStockout: days,
+    firstStockoutDate: iso,
+    hasGap,
+  };
+}
+
+/**
  * Effective safety stock = days-of-cover converted to units + any flat unit
  * buffer the user has set. Days-of-cover scales naturally with demand so the
  * default works without per-SKU tuning.
@@ -142,22 +229,37 @@ export function calculateSuggestedReorderQty(
 }
 
 /**
- * Status from the inventory position vs reorder point. red when at/below
- * ROP (we should already have ordered), yellow within 50% of ROP (watch),
- * green otherwise. No sales → green (nothing to do).
+ * Status from the runway-aware days until first stockout. Compares to the
+ * total lead+delivery cycle:
+ *   - red:    can't avoid the stockout by ordering today (≤ leadTime+delivery)
+ *   - yellow: within 50% of the lead-time cycle — watch closely
+ *   - green:  comfortable
+ *
+ * No sales → green (nothing to do). A `hasGap` (= will stock out before the
+ * latest scheduled batch arrives) always escalates to red because pipeline
+ * by itself isn't enough.
  */
 export function determineStockStatus(
-  inventoryPosition: number,
-  reorderPoint: number,
+  daysUntilStockout: number | null,
+  leadTimeDays: number,
+  deliveryTimeDays: number,
+  hasGap: boolean,
   avgDailySellRate: number
 ): { status: StockStatus; reorderNeeded: boolean } {
   if (avgDailySellRate <= 0) {
     return { status: "green", reorderNeeded: false };
   }
-  if (inventoryPosition <= reorderPoint) {
+  if (hasGap) {
     return { status: "red", reorderNeeded: true };
   }
-  if (inventoryPosition <= reorderPoint * 1.5) {
+  if (daysUntilStockout === null) {
+    return { status: "green", reorderNeeded: false };
+  }
+  const totalLead = leadTimeDays + deliveryTimeDays;
+  if (daysUntilStockout <= totalLead) {
+    return { status: "red", reorderNeeded: true };
+  }
+  if (daysUntilStockout <= totalLead * 1.5) {
     return { status: "yellow", reorderNeeded: false };
   }
   return { status: "green", reorderNeeded: false };
@@ -261,10 +363,17 @@ export function buildDashboardRows(
         config.deliveryTimeDays,
         effectiveSafetyStock
       );
-      const daysLeft = calculateDaysUntilStockout(inventoryPosition, avgRate);
+      const runway = calculateRunwayWithArrivals(
+        currentStock,
+        avgRate,
+        loc?.orderedBatches ?? []
+      );
+      const daysLeft = runway.daysUntilFirstStockout;
       const { status, reorderNeeded } = determineStockStatus(
-        inventoryPosition,
-        reorderPoint,
+        daysLeft,
+        config.leadTimeDays,
+        config.deliveryTimeDays,
+        runway.hasGap,
         avgRate
       );
       const suggestedQty = calculateSuggestedReorderQty(
@@ -290,6 +399,8 @@ export function buildDashboardRows(
         inventoryPosition,
         avgDailySellRate: avgRate,
         daysUntilStockout: daysLeft,
+        nextStockoutDate: runway.firstStockoutDate ?? undefined,
+        hasGap: runway.hasGap,
         reorderStatus: status,
         reorderNeeded,
         reorderPoint,
