@@ -8,6 +8,7 @@ import type {
   SkuDashboardRow,
 } from "@/lib/types";
 import StatusBadge from "./StatusBadge";
+import StockTimeline from "./StockTimeline";
 
 interface ProductVariant {
   variantTitle: string;
@@ -395,6 +396,22 @@ export default function ProductStockPage({ productId, onBack }: Props) {
           </table>
         </div>
       )}
+
+      {/* Stock Timeline (6-month projection per variant) */}
+      <div className="mb-6">
+        <StockTimeline
+          variants={product.variants.map((v) => ({
+            variantTitle: v.variantTitle,
+            sku: v.sku,
+            currentStock: v.currentStock,
+            avgDailySellRate:
+              dashboardBySku.get(v.sku)?.avgDailySellRate ?? v.avgDailySellRate,
+            batches: locations[v.sku]?.orderedBatches ?? [],
+            dashboard: dashboardBySku.get(v.sku),
+          }))}
+          horizonDays={180}
+        />
+      </div>
 
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-gray-700">Open Orders</h3>
