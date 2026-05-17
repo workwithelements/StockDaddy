@@ -29,6 +29,7 @@ function makeVariant(
     daysUntilStockout,
     hasGap: false,
     undatedOnOrder: 0,
+    recommendation: "reorder",
     reorderStatus: "red",
     reorderNeeded: true,
     reorderPoint: Math.ceil(avgRate * 28) + 14,

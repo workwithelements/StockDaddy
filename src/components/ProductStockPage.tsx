@@ -8,6 +8,7 @@ import type {
   SkuDashboardRow,
 } from "@/lib/types";
 import StatusBadge from "./StatusBadge";
+import StockTimeline from "./StockTimeline";
 
 interface ProductVariant {
   variantTitle: string;
@@ -153,6 +154,22 @@ export default function ProductStockPage({ productId, onBack }: Props) {
 
   async function commitEtaChange(po: PoView, newDate: string) {
     if (busy) return;
+    // Browser <input type="date"> silently turns invalid dates (e.g. "Jun 31",
+    // or any malformed value) into an empty string. If we let that through,
+    // the PUT goes out with expectedDate=undefined and silently does nothing —
+    // user sees the Save button vanish but no change. Reject explicitly so
+    // they get a clear error instead.
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      showToast(
+        "Invalid date — pick a valid arrival date (some months have 30 days, not 31)"
+      );
+      return;
+    }
+    const parsed = new Date(newDate + "T00:00:00Z");
+    if (Number.isNaN(parsed.getTime())) {
+      showToast("Invalid date");
+      return;
+    }
     setBusy(true);
     try {
       for (const id of po.ids) {
@@ -160,7 +177,7 @@ export default function ProductStockPage({ productId, onBack }: Props) {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            updateBatch: { batchId: id, expectedDate: newDate || undefined },
+            updateBatch: { batchId: id, expectedDate: newDate },
           }),
         });
       }
@@ -292,7 +309,7 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Avg/Day</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Days Left</th>
                 <th className="text-left px-4 py-2 font-medium text-gray-500">Stockout</th>
-                <th className="text-center px-4 py-2 font-medium text-gray-500">Status</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-500">Action</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Order Qty</th>
               </tr>
             </thead>
@@ -338,8 +355,8 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-center">
-                      {d ? <StatusBadge status={d.reorderStatus} /> : "—"}
+                    <td className="px-4 py-2">
+                      {d ? renderRecommendation(d) : "—"}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
                       {d && d.moqSuggestedQty > 0 ? d.moqSuggestedQty : "—"}
@@ -366,7 +383,7 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                   {dashboardGroup.minDaysUntilStockout ?? "—"}
                 </td>
                 <td className="px-4 py-2" />
-                <td className="px-4 py-2 text-center">
+                <td className="px-4 py-2">
                   <StatusBadge status={dashboardGroup.worstStatus} />
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums font-medium">
@@ -379,6 +396,22 @@ export default function ProductStockPage({ productId, onBack }: Props) {
           </table>
         </div>
       )}
+
+      {/* Stock Timeline (6-month projection per variant) */}
+      <div className="mb-6">
+        <StockTimeline
+          variants={product.variants.map((v) => ({
+            variantTitle: v.variantTitle,
+            sku: v.sku,
+            currentStock: v.currentStock,
+            avgDailySellRate:
+              dashboardBySku.get(v.sku)?.avgDailySellRate ?? v.avgDailySellRate,
+            batches: locations[v.sku]?.orderedBatches ?? [],
+            dashboard: dashboardBySku.get(v.sku),
+          }))}
+          horizonDays={180}
+        />
+      </div>
 
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-gray-700">Open Orders</h3>
@@ -478,6 +511,12 @@ export default function ProductStockPage({ productId, onBack }: Props) {
             const draftEta =
               etaDrafts[po.key] !== undefined ? etaDrafts[po.key] : po.expectedDate ?? "";
             const etaChanged = draftEta !== (po.expectedDate ?? "");
+            const isUndated = !po.expectedDate;
+            // Always show Save controls for undated batches so the user has a
+            // clear action target — even if their draft is empty (browser may
+            // have silently rejected an invalid date), we still want them to
+            // be able to click Save and get a useful error.
+            const showSaveControls = etaChanged || isUndated;
             return (
               <div key={po.key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 bg-amber-50/50 border-b border-amber-100 flex flex-wrap items-center justify-between gap-3">
@@ -487,16 +526,20 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                       <span className="text-gray-500">placed {po.placedDate}</span>
                     )}
                     <span className="flex items-center gap-2">
-                      <span className="text-gray-700">ETA</span>
+                      <span className={isUndated ? "text-red-700 font-medium" : "text-gray-700"}>
+                        ETA{isUndated && " (required)"}
+                      </span>
                       <input
                         type="date"
                         value={draftEta}
                         onChange={(e) =>
                           setEtaDrafts((p) => ({ ...p, [po.key]: e.target.value }))
                         }
-                        className="border border-amber-200 rounded px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        className={`border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
+                          isUndated ? "border-red-300" : "border-amber-200"
+                        }`}
                       />
-                      {etaChanged && (
+                      {showSaveControls && (
                         <>
                           <button
                             onClick={() => commitEtaChange(po, draftEta)}
@@ -585,4 +628,51 @@ export default function ProductStockPage({ productId, onBack }: Props) {
       )}
     </div>
   );
+}
+
+function renderRecommendation(d: SkuDashboardRow) {
+  const baseClass =
+    "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium";
+  switch (d.recommendation) {
+    case "healthy":
+      return <span className={`${baseClass} bg-emerald-100 text-emerald-700`}>Healthy</span>;
+    case "monitor":
+      return (
+        <span className={`${baseClass} bg-amber-100 text-amber-700`} title="Approaching reorder window">
+          Monitor
+        </span>
+      );
+    case "expedite":
+      return (
+        <span
+          className={`${baseClass} bg-orange-100 text-orange-700`}
+          title={
+            d.nextArrivalAfterStockout
+              ? `Stockout ${d.nextStockoutDate}; next batch (${d.nextArrivalAfterStockout.qty}u) arrives ${d.nextArrivalAfterStockout.expectedDate}, ${d.nextArrivalAfterStockout.daysFromStockout}d late. Push supplier to expedite.`
+              : ""
+          }
+        >
+          ⚡ Expedite
+          {d.nextArrivalAfterStockout && (
+            <span className="ml-1 text-orange-600 font-normal">
+              ({d.nextArrivalAfterStockout.daysFromStockout}d gap)
+            </span>
+          )}
+        </span>
+      );
+    case "reorder":
+      return (
+        <span className={`${baseClass} bg-red-100 text-red-700`} title="No incoming batch can bridge the stockout — place a new order">
+          🔻 Reorder
+        </span>
+      );
+    case "set-eta":
+      return (
+        <span className={`${baseClass} bg-red-100 text-red-700`} title="On-order qty has no ETA — set the date so it can be planned in Days Left">
+          ⚠ Set ETA
+        </span>
+      );
+    default:
+      return null;
+  }
 }

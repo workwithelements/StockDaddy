@@ -137,6 +137,16 @@ export interface SkuDashboardRow {
   /** Sum of qty across batches missing an ETA. Excluded from the runway
    *  simulation; surfaced separately so the user can set the missing date. */
   undatedOnOrder: number;
+  /** Next scheduled batch arriving AFTER the projected stockout, if any.
+   *  Lets the UI surface "expedite this batch" vs "place a new order"
+   *  recommendations instead of a blanket "Reorder Now". */
+  nextArrivalAfterStockout?: {
+    expectedDate: string;
+    qty: number;
+    daysFromStockout: number;
+  };
+  /** Short, actionable recommendation tag for this variant. */
+  recommendation: "healthy" | "monitor" | "expedite" | "reorder" | "set-eta";
   reorderStatus: StockStatus;
   reorderNeeded: boolean;
   reorderPoint: number;
