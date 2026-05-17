@@ -183,6 +183,10 @@ export default function ProductStockPage({ productId, onBack }: Props) {
       showToast("Enter quantities first");
       return;
     }
+    if (!newPoEta) {
+      showToast("Set an expected arrival date first");
+      return;
+    }
     setBusy(true);
     try {
       await fetch("/api/stock-locations", {
@@ -303,6 +307,14 @@ export default function ProductStockPage({ productId, onBack }: Props) {
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums bg-amber-50/20 text-amber-700">
                       {d && d.pipelineStock > 0 ? d.pipelineStock : "—"}
+                      {d && d.undatedOnOrder > 0 && (
+                        <div
+                          className="text-xs text-red-600"
+                          title="On-order qty without an ETA — set a date below to include it in Days Left."
+                        >
+                          ⚠ {d.undatedOnOrder} undated
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-600">
                       {d ? d.avgDailySellRate.toFixed(1) : "—"}
@@ -381,13 +393,19 @@ export default function ProductStockPage({ productId, onBack }: Props) {
       {showNewPo && (
         <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4 mb-4">
           <div className="flex items-center gap-3 mb-3">
-            <label className="text-sm font-medium text-gray-700">Expected Arrival</label>
+            <label className="text-sm font-medium text-gray-700">
+              Expected Arrival <span className="text-red-600">*</span>
+            </label>
             <input
               type="date"
               value={newPoEta}
               onChange={(e) => setNewPoEta(e.target.value)}
+              required
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
+            <span className="text-xs text-gray-500">
+              Required so this batch can be planned in Days Left.
+            </span>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -439,8 +457,9 @@ export default function ProductStockPage({ productId, onBack }: Props) {
             </button>
             <button
               onClick={commitNewPo}
-              disabled={busy}
-              className="px-3 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50"
+              disabled={busy || !newPoEta}
+              title={!newPoEta ? "Set the expected arrival date first" : undefined}
+              className="px-3 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? "Saving..." : "Add as new order"}
             </button>

@@ -345,14 +345,18 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
         <div className="mt-4 flex flex-wrap items-end justify-end gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Expected Arrival
+              Expected Arrival <span className="text-red-600">*</span>
             </label>
             <input
               type="date"
               value={batchEta}
               onChange={(e) => setBatchEta(e.target.value)}
+              required
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Required so this batch can be planned in Days Left.
+            </p>
           </div>
           <button
             onClick={async () => {
@@ -380,8 +384,9 @@ export default function OrderPlanner({ onViewProduct }: OrderPlannerProps) {
                 setAddingToOrdered(false);
               }
             }}
-            disabled={addingToOrdered || totalQty <= 0}
-            className="px-4 py-2 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50"
+            disabled={addingToOrdered || totalQty <= 0 || !batchEta}
+            title={!batchEta ? "Set the expected arrival date first" : undefined}
+            className="px-4 py-2 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {addingToOrdered ? "Adding..." : `Add ${totalQty} as new order`}
           </button>
