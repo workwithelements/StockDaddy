@@ -118,6 +118,14 @@ export function calculateRunwayWithArrivals(
    *  scheduled into the runway sim, so we surface them separately for UI
    *  warnings rather than silently crediting them as already-in-hand. */
   undatedQty: number;
+  /** When the first stockout starts, the next scheduled batch that would
+   *  refill it (if any). Lets the UI tell the user whether their existing
+   *  pipeline rescues the gap or whether they need a new order. */
+  nextArrivalAfterStockout: {
+    expectedDate: string;
+    qty: number;
+    daysFromStockout: number;
+  } | null;
 } {
   if (avgDailySellRate <= 0) {
     return {
@@ -125,6 +133,7 @@ export function calculateRunwayWithArrivals(
       firstStockoutDate: null,
       hasGap: false,
       undatedQty: 0,
+      nextArrivalAfterStockout: null,
     };
   }
 
@@ -138,7 +147,7 @@ export function calculateRunwayWithArrivals(
   // Only dated batches participate in the timeline simulation. Undated
   // batches are reported separately so the UI can prompt the user to set
   // an ETA — they no longer silently bridge stockouts.
-  const dated: { day: number; qty: number }[] = [];
+  const dated: { day: number; qty: number; date: string }[] = [];
   let undatedQty = 0;
   let stock = currentStock;
   for (const b of batches) {
@@ -153,7 +162,7 @@ export function calculateRunwayWithArrivals(
       Number(b.expectedDate.slice(8, 10))
     );
     const day = Math.max(0, Math.round((eta - t0) / 86400000));
-    dated.push({ day, qty: b.qty });
+    dated.push({ day, qty: b.qty, date: b.expectedDate });
   }
   dated.sort((a, b) => a.day - b.day);
 
@@ -185,11 +194,29 @@ export function calculateRunwayWithArrivals(
   const d = new Date(dateMs);
   const iso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 
+  // Find the next dated batch arriving AFTER the stockout (if any).
+  let nextArrivalAfterStockout: {
+    expectedDate: string;
+    qty: number;
+    daysFromStockout: number;
+  } | null = null;
+  if (firstStockoutDay !== null) {
+    const next = dated.find((b) => b.day > firstStockoutDay!);
+    if (next) {
+      nextArrivalAfterStockout = {
+        expectedDate: next.date,
+        qty: next.qty,
+        daysFromStockout: Math.ceil(next.day - firstStockoutDay),
+      };
+    }
+  }
+
   return {
     daysUntilFirstStockout: days,
     firstStockoutDate: iso,
     hasGap,
     undatedQty,
+    nextArrivalAfterStockout,
   };
 }
 
@@ -274,6 +301,29 @@ export function determineStockStatus(
     return { status: "yellow", reorderNeeded: false };
   }
   return { status: "green", reorderNeeded: false };
+}
+
+/**
+ * Decide what action makes sense given the runway and existing pipeline.
+ * Different from raw status: a red SKU with a batch arriving in a few days
+ * after the stockout should be told to EXPEDITE, not place a new order
+ * (which won't arrive in time anyway given the lead time).
+ */
+export function computeRecommendation(
+  status: StockStatus,
+  runway: ReturnType<typeof calculateRunwayWithArrivals>,
+  totalLeadDays: number
+): "healthy" | "monitor" | "expedite" | "reorder" | "set-eta" {
+  if (runway.undatedQty > 0) return "set-eta";
+  if (status === "green") return "healthy";
+  if (status === "yellow") return "monitor";
+  // status === "red"
+  const next = runway.nextArrivalAfterStockout;
+  if (!next) return "reorder"; // no pipeline to bridge — must place new order
+  // If next batch arrives within ~2 weeks of stockout, expediting it is
+  // realistic. Otherwise the gap is too long to bridge by speeding it up.
+  if (next.daysFromStockout <= 14) return "expedite";
+  return "reorder";
 }
 
 /**
@@ -387,6 +437,11 @@ export function buildDashboardRows(
         runway.hasGap,
         avgRate
       );
+      const recommendation = computeRecommendation(
+        status,
+        runway,
+        config.leadTimeDays + config.deliveryTimeDays
+      );
       const suggestedQty = calculateSuggestedReorderQty(
         avgRate,
         config.leadTimeDays,
@@ -413,6 +468,8 @@ export function buildDashboardRows(
         nextStockoutDate: runway.firstStockoutDate ?? undefined,
         hasGap: runway.hasGap,
         undatedOnOrder: runway.undatedQty,
+        nextArrivalAfterStockout: runway.nextArrivalAfterStockout ?? undefined,
+        recommendation,
         reorderStatus: status,
         reorderNeeded,
         reorderPoint,

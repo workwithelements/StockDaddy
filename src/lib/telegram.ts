@@ -49,25 +49,44 @@ export async function sendProductReorderAlert(
   const deliveryTime = group.variants[0]?.deliveryTimeDays ?? 0;
   const totalLead = leadTime + deliveryTime;
 
+  // Pick the dominant recommendation across red variants for the header verb.
+  const reds = group.variants.filter((v) => v.reorderStatus === "red");
+  const recs = new Set(reds.map((v) => v.recommendation));
+  const header = recs.has("set-eta")
+    ? `<b>⚠ Set arrival date: ${title}</b>`
+    : recs.has("expedite")
+    ? `<b>⚡ Expedite incoming batch: ${title}</b>`
+    : `<b>🔻 Reorder: ${title}</b>`;
+
   const lines: string[] = [];
-  lines.push(`<b>🔻 Reorder: ${title}</b>`);
+  lines.push(header);
   lines.push("");
   lines.push("<b>Variants:</b>");
   for (const v of group.variants) {
     const variant = escapeHtml(v.variantTitle);
     const incoming =
       v.pipelineStock > 0 ? ` (+${v.pipelineStock} on order)` : "";
-    const eta = v.orderedExpectedDate
-      ? ` · earliest ETA ${escapeHtml(v.orderedExpectedDate)}`
-      : "";
+    const undated = v.undatedOnOrder > 0 ? ` ⚠ ${v.undatedOnOrder} no ETA` : "";
     const daysLeft = v.daysUntilStockout ?? "—";
+    const stockoutStr = v.nextStockoutDate
+      ? ` → stockout ${escapeHtml(v.nextStockoutDate)}`
+      : "";
+    let actionLine = "";
+    if (v.recommendation === "expedite" && v.nextArrivalAfterStockout) {
+      actionLine = `\n   ⚡ ${v.nextArrivalAfterStockout.qty}u batch arrives ${escapeHtml(v.nextArrivalAfterStockout.expectedDate)} (${v.nextArrivalAfterStockout.daysFromStockout}d late) — push to expedite`;
+    } else if (v.recommendation === "reorder" && v.reorderStatus === "red") {
+      actionLine = `\n   🔻 No incoming batch bridges the gap — place a new order (lead ${totalLead}d)`;
+    } else if (v.recommendation === "set-eta") {
+      actionLine = `\n   ⚠ ${v.undatedOnOrder} on order has no ETA — set the date in app`;
+    }
     lines.push(
-      `• <b>${variant}</b> — qty <b>${v.moqSuggestedQty}</b>` +
-        `\n   stock ${v.currentStock}${incoming}${eta}, avg ${v.avgDailySellRate.toFixed(1)}/day, ${daysLeft}d left`
+      `• <b>${variant}</b> — stock ${v.currentStock}${incoming}${undated}, avg ${v.avgDailySellRate.toFixed(1)}/day, ${daysLeft}d left${stockoutStr}` +
+        actionLine +
+        `\n   suggested order qty: <b>${v.moqSuggestedQty}</b>`
     );
   }
   lines.push("");
-  lines.push(`<b>Total order:</b> ${totalQty} units (MOQ ${group.moq})`);
+  lines.push(`<b>Total suggested order:</b> ${totalQty} units (MOQ ${group.moq})`);
   lines.push(`<b>Lead time:</b> ${totalLead} days`);
 
   const ts = new Date().toLocaleString("en-GB", {
